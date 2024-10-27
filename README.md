@@ -25,6 +25,7 @@ package manager detection.
   for test, etc.)
 - 📝 **Rich Preview**: See full script details including descriptions
 - 🔄 **Live Filtering**: Results update as you type
+- 🔄 **Script Synonyms**: Support for common script name alternatives
 
 ## Installation
 
@@ -127,6 +128,13 @@ Press `/` to enter search mode and type to filter scripts by:
 - Command content
 - Description (if available)
 
+### Script Synonyms
+
+PSR supports some common script name alternatives:
+
+- `dev`: If no `dev` script exists, PSR will look for `start` or `run` scripts. When using this synonym, PSR sets the `NODE_ENV` environment variable to `dev`.
+- `typecheck` and `tc`: These are treated as synonyms. If one doesn't exist but the other does, PSR will run the existing script.
+
 ## Examples
 Select and run a script in the current directory:
 ```bash
@@ -141,6 +149,12 @@ psr test
 Run a script with additional arguments:
 ```bash
 psr test -- --watch
+```
+
+Use a script synonym:
+```bash
+psr dev  # Runs 'start' or 'run' if 'dev' doesn't exist, with NODE_ENV=dev
+psr typecheck  # Runs 'tc' if 'typecheck' doesn't exist
 ```
 
 List scripts:

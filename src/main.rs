@@ -539,6 +539,33 @@ impl Cli {
     }
 }
 
+fn find_synonym_script(scripts: &[Script], name: &str) -> Option<String> {
+    match name {
+        "dev" => scripts.iter().find_map(|s| {
+            if s.name == "start" || s.name == "run" {
+                Some(s.name.clone())
+            } else {
+                None
+            }
+        }),
+        "typecheck" => scripts.iter().find_map(|s| {
+            if s.name == "tc" {
+                Some(s.name.clone())
+            } else {
+                None
+            }
+        }),
+        "tc" => scripts.iter().find_map(|s| {
+            if s.name == "typecheck" {
+                Some(s.name.clone())
+            } else {
+                None
+            }
+        }),
+        _ => None,
+    }
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     let effective_theme = cli.get_effective_theme();
@@ -576,12 +603,22 @@ fn main() -> Result<()> {
 
     // If a script name is provided, run it directly
     if let Some(script_name) = cli.script {
-        if let Some(script) = scripts.iter().find(|s| s.name == script_name) {
-            let exit_code = run_script(&package_manager, &script.name, &cli.args)?;
-            std::process::exit(exit_code);
+        let script_to_run = if let Some(script) = scripts.iter().find(|s| s.name == script_name) {
+            script.name.clone()
+        } else if let Some(synonym) = find_synonym_script(&scripts, &script_name) {
+            synonym
         } else {
             anyhow::bail!("Script '{}' not found", script_name);
+        };
+
+        let mut env_vars = std::env::vars().collect::<HashMap<String, String>>();
+        if script_name == "dev" && (script_to_run == "start" || script_to_run == "run") {
+            env_vars.insert("NODE_ENV".to_string(), "dev".to_string());
         }
+
+        let exit_code =
+            run_script_with_env(&package_manager, &script_to_run, &cli.args, &env_vars)?;
+        std::process::exit(exit_code);
     }
 
     // Setup terminal
@@ -690,4 +727,19 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
             Constraint::Percentage((100 - percent_x) / 2),
         ])
         .split(popup_layout[1])[1]
+}
+
+fn run_script_with_env(
+    package_manager: &PackageManager,
+    script: &str,
+    args: &[String],
+    env_vars: &HashMap<String, String>,
+) -> Result<i32> {
+    let mut command = package_manager.run_command(script);
+    command.args(args);
+    command.envs(env_vars);
+
+    let status = command.status().context("Failed to run script")?;
+
+    Ok(status.code().unwrap_or(-1))
 }
