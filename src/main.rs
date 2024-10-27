@@ -516,6 +516,13 @@ struct Cli {
     /// Set the color theme (dark or light)
     #[arg(long, env = "PSR_THEME", default_value = "dark")]
     theme: Theme,
+
+    /// Return to TUI after running a script instead of exiting
+    #[arg(long)]
+    r#loop: bool,
+
+    /// Name of the script to run directly
+    script: Option<String>,
 }
 
 impl Cli {
@@ -563,30 +570,56 @@ fn main() -> Result<()> {
     let package_manager = PackageManager::detect(package_json.parent().unwrap())
         .context("Could not detect package manager")?;
 
-    // Setup terminal
-    stdout().execute(EnterAlternateScreen)?;
-    enable_raw_mode()?;
-    let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
-
-    // Run TUI
-    let mut app = App::new(scripts, effective_theme);
-    let result = run_app(&mut terminal, &mut app);
-
-    // Cleanup terminal
-    disable_raw_mode()?;
-    stdout().execute(LeaveAlternateScreen)?;
-
-    // Run selected script
-    if let Ok(Some(script)) = result {
-        let status = package_manager
-            .run_command(&script)
-            .status()
-            .context("Failed to run script")?;
-
-        if !status.success() {
-            anyhow::bail!("Script failed with exit code: {}", status);
+    // If a script name is provided, run it directly
+    if let Some(script_name) = cli.script {
+        if let Some(script) = scripts.iter().find(|s| s.name == script_name) {
+            return run_script(&package_manager, &script.name);
+        } else {
+            anyhow::bail!("Script '{}' not found", script_name);
         }
     }
 
+    // Setup terminal
+    stdout().execute(EnterAlternateScreen)?;
+
+    // Run TUI
+    loop {
+        enable_raw_mode()?;
+        let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
+        let mut app = App::new(scripts.clone(), effective_theme);
+        let result = run_app(&mut terminal, &mut app);
+
+        // Cleanup terminal
+        disable_raw_mode()?;
+        stdout().execute(LeaveAlternateScreen)?;
+
+        // Run selected script
+        if let Ok(Some(script)) = result {
+            run_script(&package_manager, &script)?;
+
+            if !cli.r#loop {
+                break;
+            }
+
+            // Re-setup terminal for next iteration
+            stdout().execute(EnterAlternateScreen)?;
+            enable_raw_mode()?;
+        } else {
+            break;
+        }
+    }
+
+    Ok(())
+}
+
+fn run_script(package_manager: &PackageManager, script: &str) -> Result<()> {
+    let status = package_manager
+        .run_command(script)
+        .status()
+        .context("Failed to run script")?;
+
+    if !status.success() {
+        anyhow::bail!("Script failed with exit code: {}", status);
+    }
     Ok(())
 }

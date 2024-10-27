@@ -71,13 +71,18 @@ Navigate to any directory containing a `package.json` (or parent directory) and
 run:
 
 ```bash
-psr
+psr [SCRIPT_NAME]
 ```
+
+If a script name is provided as a positional argument, PSR will run that script directly without launching the TUI.
 
 ### Command Line Options
 
-```
-Usage: psr [OPTIONS]
+```text
+Usage: psr [OPTIONS] [SCRIPT_NAME]
+
+Arguments:
+  [SCRIPT_NAME]  Name of the script to run directly
 
 Options:
   -d, --dir <PATH>   Start in a specific directory instead of current directory
@@ -122,15 +127,46 @@ Press `/` to enter search mode and type to filter scripts by:
 - Description (if available)
 
 ## Examples
-
-List scripts in a specific project:
+Select and run a script in the current directory:
 ```bash
-psr --dir ~/projects/my-app --list
+psr
+```
+
+Run a script, and the return to the TUI:
+```bash
+psr --watch
+```
+
+Select and run a script in the current directory:
+```bash
+psr
+```
+
+List scripts:
+```bash
+psr --list
+```
+
+Run a specific script directly:
+```bash
+psr build
+```
+
+
+Run the TUI and return to it after running a script:
+```bash
+psr --loop
 ```
 
 Run with a light theme:
 ```bash
 psr --theme light
+```
+
+or:
+
+```bash
+PSR_THEME=light psr
 ```
 
 Run with a dark theme (default):
