@@ -2,7 +2,7 @@
 name = "package-script-runner"
 version = "0.1.0"
 edition = "2021"
-description = "A fast TUI-based script runner for Node.js and Deno projects"
+description = "A fast TUI-based script selector for npm etc. projects"
 authors = ["Oliver Steele <oliver.steele@gmail.com>"]
 license = "MIT"
 readme = "README.md"

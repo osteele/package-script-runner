@@ -1,10 +1,10 @@
 # Package Script Runner (psr)
 
-A fast TUI-based script runner for Node.js npm, bun, and deno projects. Quickly
-find and run package scripts with keyboard shortcuts, search, and smart package
-manager detection.
+<img src="docs/logo.svg" width="100" alt="Package Script Runner Logo">
 
-![TUI Screenshot Placeholder]
+A fast TUI-based script selector for Node.js npm, bun, and deno projects.
+Quickly find and run package scripts with keyboard shortcuts, search, and smart
+package manager detection.
 
 ## Features
 
@@ -151,7 +151,6 @@ Run a specific script directly:
 ```bash
 psr build
 ```
-
 
 Run the TUI and return to it after running a script:
 ```bash
