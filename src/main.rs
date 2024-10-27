@@ -523,6 +523,10 @@ struct Cli {
 
     /// Name of the script to run directly
     script: Option<String>,
+
+    /// Additional arguments to pass to the script
+    #[arg(trailing_var_arg = true)]
+    args: Vec<String>,
 }
 
 impl Cli {
@@ -573,7 +577,7 @@ fn main() -> Result<()> {
     // If a script name is provided, run it directly
     if let Some(script_name) = cli.script {
         if let Some(script) = scripts.iter().find(|s| s.name == script_name) {
-            let exit_code = run_script(&package_manager, &script.name)?;
+            let exit_code = run_script(&package_manager, &script.name, &cli.args)?;
             std::process::exit(exit_code);
         } else {
             anyhow::bail!("Script '{}' not found", script_name);
@@ -596,7 +600,7 @@ fn main() -> Result<()> {
 
         // Run selected script
         if let Ok(Some(script)) = result {
-            let exit_code = run_script(&package_manager, &script)?;
+            let exit_code = run_script(&package_manager, &script, &[])?;
 
             if cli.r#loop {
                 // Display splash screen with error code
@@ -618,11 +622,11 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn run_script(package_manager: &PackageManager, script: &str) -> Result<i32> {
-    let status = package_manager
-        .run_command(script)
-        .status()
-        .context("Failed to run script")?;
+fn run_script(package_manager: &PackageManager, script: &str, args: &[String]) -> Result<i32> {
+    let mut command = package_manager.run_command(script);
+    command.args(args);
+
+    let status = command.status().context("Failed to run script")?;
 
     Ok(status.code().unwrap_or(-1))
 }

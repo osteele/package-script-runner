@@ -71,18 +71,19 @@ Navigate to any directory containing a `package.json` (or parent directory) and
 run:
 
 ```bash
-psr [SCRIPT_NAME]
+psr [SCRIPT_NAME] [-- SCRIPT_ARGS...]
 ```
 
-If a script name is provided as a positional argument, PSR will run that script directly without launching the TUI.
+If a script name is provided as a positional argument, PSR will run that script directly without launching the TUI. You can pass additional arguments to the script by adding `--` followed by the arguments.
 
 ### Command Line Options
 
 ```text
-Usage: psr [OPTIONS] [SCRIPT_NAME]
+Usage: psr [OPTIONS] [SCRIPT_NAME] [-- SCRIPT_ARGS...]
 
 Arguments:
-  [SCRIPT_NAME]  Name of the script to run directly
+  [SCRIPT_NAME]     Name of the script to run directly
+  [SCRIPT_ARGS]...  Additional arguments to pass to the script
 
 Options:
   -d, --dir <PATH>   Start in a specific directory instead of current directory
@@ -132,14 +133,14 @@ Select and run a script in the current directory:
 psr
 ```
 
-Run a script, and the return to the TUI:
+Run a script directly:
 ```bash
-psr --watch
+psr test
 ```
 
-Select and run a script in the current directory:
+Run a script with additional arguments:
 ```bash
-psr
+psr test -- --watch
 ```
 
 List scripts:
