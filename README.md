@@ -2,9 +2,9 @@
 
 <img src="docs/logo.svg" width="100" alt="Package Script Runner Logo">
 
-A fast TUI-based script selector for Node.js (npm, bun, deno) and Rust projects.
-Quickly find and run package scripts with keyboard shortcuts, search, and smart
-project type detection.
+A fast TUI-based script selector for Node.js (npm, bun, deno), Python (pip,
+poetry, uv), and Rust projects. Quickly find and run package scripts with
+keyboard shortcuts, search, and smart project type detection.
 
 ## Features
 
@@ -18,11 +18,15 @@ project type detection.
     - pnpm
     - bun
     - deno
+  - Python:
+    - pip
+    - poetry
+    - uv
   - Rust:
     - Cargo
 - 📁 **Smart Detection**:
   - Automatically detects the right project type and package manager
-  - Finds `package.json` or `Cargo.toml` in parent directories
+  - Finds `package.json`, `pyproject.toml`, `requirements.txt`, or `Cargo.toml` in parent directories
   - Stops at home directory
 - ⌨️ **Keyboard Shortcuts**: Quick access to common scripts (`d` for dev, `t`
   for test, etc.)
@@ -71,7 +75,7 @@ This should display the version number of PSR.
 
 ## Usage
 
-Navigate to any directory containing a `package.json` or `Cargo.toml` (or parent directory) and
+Navigate to any directory containing a `package.json`, `pyproject.toml`, `requirements.txt`, or `Cargo.toml` (or parent directory) and
 run:
 
 ```bash
@@ -210,10 +214,14 @@ Package Script Runner automatically detects your project type through:
    - `pnpm-lock.yaml` (pnpm)
    - `bun.lockb` (bun)
    - `deno.lock` (deno)
+   - `poetry.lock` (poetry)
    - `Cargo.toml` (Rust)
 2. Config files (fallback):
    - `.npmrc`
    - `.yarnrc`/`.yarnrc.yml`
+   - `pyproject.toml`
+   - `requirements.txt`
+   - `uv.toml`
 
 ### Theming
 
