@@ -16,10 +16,11 @@ use ratatui::{
 use serde::Deserialize;
 use std::{
     collections::HashMap,
-    fs,
+    env, fs,
     io::stdout,
     path::{Path, PathBuf},
     process::Command,
+    str::FromStr,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -34,15 +35,27 @@ enum ScriptType {
 }
 
 impl ScriptType {
-    fn color(&self) -> Color {
-        match self {
-            ScriptType::Build => Color::Yellow,
-            ScriptType::Development => Color::Green,
-            ScriptType::Test => Color::Cyan,
-            ScriptType::Deployment => Color::Red,
-            ScriptType::Format => Color::Blue,
-            ScriptType::Clean => Color::Gray,
-            ScriptType::Other => Color::White,
+    fn color(&self, theme: Theme) -> Color {
+        match theme {
+            Theme::NoColor => Color::Reset,
+            Theme::Dark => match self {
+                ScriptType::Build => Color::Rgb(255, 204, 0),
+                ScriptType::Development => Color::Rgb(0, 255, 0),
+                ScriptType::Test => Color::Rgb(0, 255, 255),
+                ScriptType::Deployment => Color::Rgb(0, 191, 255),
+                ScriptType::Format => Color::Rgb(191, 0, 255),
+                ScriptType::Clean => Color::Rgb(192, 192, 192),
+                ScriptType::Other => Color::White,
+            },
+            Theme::Light => match self {
+                ScriptType::Build => Color::Rgb(204, 102, 0),
+                ScriptType::Development => Color::Rgb(0, 153, 0),
+                ScriptType::Test => Color::Rgb(0, 102, 204),
+                ScriptType::Deployment => Color::Rgb(153, 0, 0),
+                ScriptType::Format => Color::Rgb(102, 0, 204),
+                ScriptType::Clean => Color::Rgb(64, 64, 64),
+                ScriptType::Other => Color::Black,
+            },
         }
     }
 
@@ -240,10 +253,11 @@ struct App {
     search_mode: bool,
     search_query: String,
     filtered_indices: Vec<usize>,
+    theme: Theme,
 }
 
 impl App {
-    fn new(scripts: Vec<Script>) -> Self {
+    fn new(scripts: Vec<Script>, theme: Theme) -> Self {
         let filtered_indices: Vec<usize> = (0..scripts.len()).collect();
         let mut app = Self {
             scripts,
@@ -251,6 +265,7 @@ impl App {
             search_mode: false,
             search_query: String::new(),
             filtered_indices,
+            theme,
         };
         app.state.select(Some(0));
         app
@@ -296,7 +311,7 @@ impl App {
     }
 }
 
-fn render_script_preview(script: &Script) -> Vec<Line> {
+fn render_script_preview(script: &Script, theme: Theme) -> Vec<Line> {
     vec![
         Line::from(vec![
             Span::styled("Name: ", Style::default().add_modifier(Modifier::BOLD)),
@@ -306,7 +321,7 @@ fn render_script_preview(script: &Script) -> Vec<Line> {
             Span::styled("Type: ", Style::default().add_modifier(Modifier::BOLD)),
             Span::styled(
                 format!("{:?}", script.script_type),
-                Style::default().fg(script.script_type.color()),
+                Style::default().fg(script.script_type.color(theme)),
             ),
         ]),
         Line::from(vec![
@@ -383,7 +398,7 @@ fn run_app(
                                 Span::styled(
                                     format!("{}{}", shortcut, script.name),
                                     Style::default()
-                                        .fg(script.script_type.color())
+                                        .fg(script.script_type.color(app.theme))
                                         .add_modifier(Modifier::BOLD),
                                 ),
                                 Span::raw(": "),
@@ -395,7 +410,7 @@ fn run_app(
                             Span::styled(
                                 format!("{}{}", shortcut, script.name),
                                 Style::default()
-                                    .fg(script.script_type.color())
+                                    .fg(script.script_type.color(app.theme))
                                     .add_modifier(Modifier::BOLD),
                             ),
                             Span::raw(": "),
@@ -414,7 +429,7 @@ fn run_app(
 
             // Preview panel
             if let Some(script) = app.get_selected_script() {
-                let preview = Paragraph::new(render_script_preview(script))
+                let preview = Paragraph::new(render_script_preview(script, app.theme))
                     .block(Block::default().title("Details").borders(Borders::ALL))
                     .wrap(Wrap { trim: true });
                 f.render_widget(preview, chunks[1]);
@@ -460,6 +475,26 @@ fn run_app(
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+enum Theme {
+    Dark,
+    Light,
+    NoColor,
+}
+
+impl FromStr for Theme {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "dark" => Ok(Theme::Dark),
+            "light" => Ok(Theme::Light),
+            "nocolor" => Ok(Theme::NoColor),
+            _ => Err(format!("Invalid theme: {}", s)),
+        }
+    }
+}
+
 #[derive(Parser)]
 #[command(name = "psr")]
 #[command(author = "Oliver Steele <steele@osteele.com>")]
@@ -477,10 +512,26 @@ struct Cli {
     /// List available scripts without launching the TUI
     #[arg(short, long)]
     list: bool,
+
+    /// Set the color theme (dark or light)
+    #[arg(long, env = "PSR_THEME", default_value = "dark")]
+    theme: Theme,
+}
+
+impl Cli {
+    fn get_effective_theme(&self) -> Theme {
+        if env::var_os("NO_COLOR").is_some() {
+            Theme::NoColor
+        } else {
+            self.theme
+        }
+    }
 }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    let effective_theme = cli.get_effective_theme();
+
     // Change directory if specified
     if let Some(dir) = cli.dir {
         std::env::set_current_dir(dir)?;
@@ -518,7 +569,7 @@ fn main() -> Result<()> {
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
 
     // Run TUI
-    let mut app = App::new(scripts);
+    let mut app = App::new(scripts, effective_theme);
     let result = run_app(&mut terminal, &mut app);
 
     // Cleanup terminal

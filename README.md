@@ -28,9 +28,42 @@ manager detection.
 
 ## Installation
 
+### Building from Source
+
+To build and install PSR from source:
+
+1. Ensure you have Rust and Cargo installed. If not, install them from
+   [https://rustup.rs/](https://rustup.rs/).
+
+2. Clone the repository:
+   ```bash
+   git clone https://github.com/yourusername/package-script-runner.git
+   cd package-script-runner
+   ```
+
+3. Build the project:
+   ```bash
+   cargo build --release
+   ```
+
+4. The compiled binary will be in `target/release/psr`. You can run it directly
+   or install it to your system:
+   ```bash
+   cargo install --path .
+   ```
+
+This will install the `psr` binary to your Cargo bin directory (usually
+`~/.cargo/bin/`).
+
+### Verifying Installation
+
+After installation, you can verify that PSR is installed correctly by running:
+
 ```bash
-cargo install package-script-runner
+psr --version
 ```
+
+This should display the version number of PSR.
 
 ## Usage
 
@@ -49,10 +82,18 @@ Usage: psr [OPTIONS]
 Options:
   -d, --dir <PATH>   Start in a specific directory instead of current directory
   -l, --list         List available scripts without launching TUI
+      --theme <THEME> Set the color theme (dark or light) [env: PSR_THEME=] [default: dark]
   -v, --verbose      Show verbose output
   -h, --help         Print help information
   -V, --version      Print version information
 ```
+
+### Environment Variables
+
+- `PSR_THEME`: Set the color theme (dark or light). Overridden by the `--theme`
+  CLI option if provided.
+- `NO_COLOR`: When set (to any value), disables all color output. This adheres
+  to the [NO_COLOR standard](https://no-color.org/).
 
 ### Keyboard Controls
 
@@ -87,6 +128,21 @@ List scripts in a specific project:
 psr --dir ~/projects/my-app --list
 ```
 
+Run with a light theme:
+```bash
+psr --theme light
+```
+
+Run with a dark theme (default):
+```bash
+psr --theme dark
+```
+
+Run with colors disabled:
+```bash
+NO_COLOR=1 psr
+```
+
 Show version:
 ```bash
 psr --version
@@ -104,6 +160,28 @@ Package Script Runner automatically detects your package manager through:
 2. Config files (fallback):
    - `.npmrc`
    - `.yarnrc`/`.yarnrc.yml`
+
+### Theming
+
+PSR supports two color themes: dark (default) and light. You can set the theme
+using the `--theme` CLI option or the `PSR_THEME` environment variable. The CLI
+option takes precedence over the environment variable.
+
+To set the theme using the environment variable:
+
+```bash
+export PSR_THEME=light
+psr
+```
+
+To disable colors entirely, you can use the `NO_COLOR` environment variable, which adheres to the [NO_COLOR standard](https://no-color.org/):
+
+```bash
+export NO_COLOR=1
+psr
+```
+
+This will run PSR without any color output, regardless of the theme setting.
 
 ## Contributing
 
