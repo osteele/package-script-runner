@@ -573,7 +573,8 @@ fn main() -> Result<()> {
     // If a script name is provided, run it directly
     if let Some(script_name) = cli.script {
         if let Some(script) = scripts.iter().find(|s| s.name == script_name) {
-            return run_script(&package_manager, &script.name);
+            let exit_code = run_script(&package_manager, &script.name)?;
+            std::process::exit(exit_code);
         } else {
             anyhow::bail!("Script '{}' not found", script_name);
         }
@@ -595,15 +596,20 @@ fn main() -> Result<()> {
 
         // Run selected script
         if let Ok(Some(script)) = result {
-            run_script(&package_manager, &script)?;
+            let exit_code = run_script(&package_manager, &script)?;
 
-            if !cli.r#loop {
-                break;
+            if cli.r#loop {
+                // Display splash screen with error code
+                if exit_code != 0 {
+                    display_error_splash(&mut terminal, exit_code)?;
+                }
+                // Re-setup terminal for next iteration
+                stdout().execute(EnterAlternateScreen)?;
+                enable_raw_mode()?;
+            } else {
+                // Exit with the script's exit code
+                std::process::exit(exit_code);
             }
-
-            // Re-setup terminal for next iteration
-            stdout().execute(EnterAlternateScreen)?;
-            enable_raw_mode()?;
         } else {
             break;
         }
@@ -612,14 +618,72 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn run_script(package_manager: &PackageManager, script: &str) -> Result<()> {
+fn run_script(package_manager: &PackageManager, script: &str) -> Result<i32> {
     let status = package_manager
         .run_command(script)
         .status()
         .context("Failed to run script")?;
 
-    if !status.success() {
-        anyhow::bail!("Script failed with exit code: {}", status);
+    Ok(status.code().unwrap_or(-1))
+}
+
+fn display_error_splash(
+    terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+    exit_code: i32,
+) -> Result<()> {
+    terminal.clear()?;
+
+    terminal.draw(|f| {
+        let size = f.size();
+        let block = Block::default().title("Script Error").borders(Borders::ALL);
+        let area = centered_rect(60, 20, size);
+        f.render_widget(block, area);
+
+        let text = vec![
+            Line::from(vec![
+                Span::raw("The script exited with code: "),
+                Span::styled(
+                    exit_code.to_string(),
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                ),
+            ]),
+            Line::from(""),
+            Line::from("Press any key to continue..."),
+        ];
+
+        let paragraph = Paragraph::new(text)
+            .alignment(ratatui::layout::Alignment::Center)
+            .wrap(Wrap { trim: true });
+
+        f.render_widget(paragraph, area);
+    })?;
+
+    // Wait for a key press
+    loop {
+        if let Event::Key(_) = event::read()? {
+            break;
+        }
     }
+
     Ok(())
+}
+
+fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
+    let popup_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage((100 - percent_y) / 2),
+            Constraint::Percentage(percent_y),
+            Constraint::Percentage((100 - percent_y) / 2),
+        ])
+        .split(r);
+
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage((100 - percent_x) / 2),
+            Constraint::Percentage(percent_x),
+            Constraint::Percentage((100 - percent_x) / 2),
+        ])
+        .split(popup_layout[1])[1]
 }
