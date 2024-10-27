@@ -22,6 +22,7 @@ use std::{
     process::Command,
     str::FromStr,
 };
+use toml::Value;
 
 #[derive(Debug, Clone, Copy)]
 enum ScriptType {
@@ -120,7 +121,15 @@ impl Script {
     }
 }
 
-enum PackageManager {
+trait PackageManager {
+    fn detect(dir: &Path) -> Option<Self>
+    where
+        Self: Sized;
+    fn run_command(&self, script: &str) -> Command;
+    fn parse_scripts(&self, path: &Path) -> Result<Vec<Script>>;
+}
+
+enum NodePackageManager {
     Npm,
     Yarn,
     Pnpm,
@@ -128,8 +137,11 @@ enum PackageManager {
     Deno,
 }
 
-impl PackageManager {
+impl PackageManager for NodePackageManager {
     fn detect(dir: &Path) -> Option<Self> {
+        if !dir.join("package.json").exists() {
+            return None;
+        }
         // Check lock files first
         if dir.join("bun.lockb").exists() {
             return Some(Self::Bun);
@@ -189,62 +201,176 @@ impl PackageManager {
         cmd.arg(script);
         cmd
     }
-}
 
-fn find_package_json() -> Option<PathBuf> {
-    let current_dir = std::env::current_dir().ok()?;
-    let home_dir = dirs::home_dir()?;
-
-    let mut current = current_dir.as_path();
-    while current >= home_dir.as_path() {
-        let package_json = current.join("package.json");
-        if package_json.exists() {
-            return Some(package_json);
+    fn parse_scripts(&self, path: &Path) -> Result<Vec<Script>> {
+        let package_json_path = path.join("package.json");
+        if !package_json_path.exists() {
+            return Err(anyhow::anyhow!("package.json not found"));
         }
-        current = current.parent()?;
-    }
-    None
-}
+        let content = fs::read_to_string(package_json_path)?;
+        let package: PackageJson = serde_json::from_str(&content)?;
 
-fn parse_scripts(path: &Path) -> Result<Vec<Script>> {
-    let content = fs::read_to_string(path)?;
-    let package: PackageJson = serde_json::from_str(&content)?;
+        let mut scripts = Vec::new();
+        if let Some(script_map) = package.scripts {
+            // Process priority scripts first
+            for &priority in PRIORITY_SCRIPTS {
+                if let Some(command) = script_map.get(priority) {
+                    let script_type = ScriptType::from_script(priority, command);
+                    scripts.push(Script {
+                        name: priority.to_string(),
+                        command: command.clone(),
+                        description: package.descriptions.get(priority).cloned(),
+                        shortcut: Some(priority.chars().next().unwrap()),
+                        script_type,
+                    });
+                }
+            }
 
-    let mut scripts = Vec::new();
-    if let Some(script_map) = package.scripts {
-        // Process priority scripts first
-        for &priority in PRIORITY_SCRIPTS {
-            if let Some(command) = script_map.get(priority) {
-                let script_type = ScriptType::from_script(priority, command);
+            // Process remaining scripts alphabetically
+            let mut other_scripts: Vec<_> = script_map
+                .iter()
+                .filter(|(name, _)| !PRIORITY_SCRIPTS.contains(&name.as_str()))
+                .collect();
+            other_scripts.sort_by(|(a, _), (b, _)| a.cmp(b));
+
+            for (name, command) in other_scripts {
+                let script_type = ScriptType::from_script(name, command);
                 scripts.push(Script {
-                    name: priority.to_string(),
+                    name: name.clone(),
                     command: command.clone(),
-                    description: package.descriptions.get(priority).cloned(),
-                    shortcut: Some(priority.chars().next().unwrap()),
+                    description: package.descriptions.get(name).cloned(),
+                    shortcut: None,
                     script_type,
                 });
             }
         }
+        Ok(scripts)
+    }
+}
 
-        // Process remaining scripts alphabetically
-        let mut other_scripts: Vec<_> = script_map
-            .iter()
-            .filter(|(name, _)| !PRIORITY_SCRIPTS.contains(&name.as_str()))
-            .collect();
-        other_scripts.sort_by(|(a, _), (b, _)| a.cmp(b));
+struct RustPackageManager;
 
-        for (name, command) in other_scripts {
-            let script_type = ScriptType::from_script(name, command);
-            scripts.push(Script {
-                name: name.clone(),
-                command: command.clone(),
-                description: package.descriptions.get(name).cloned(),
-                shortcut: None,
-                script_type,
-            });
+impl PackageManager for RustPackageManager {
+    fn detect(dir: &Path) -> Option<Self> {
+        if dir.join("Cargo.toml").exists() {
+            Some(RustPackageManager)
+        } else {
+            None
         }
     }
-    Ok(scripts)
+
+    fn run_command(&self, script: &str) -> Command {
+        let mut cmd = Command::new("cargo");
+        cmd.arg(script);
+        cmd
+    }
+
+    fn parse_scripts(&self, path: &Path) -> Result<Vec<Script>> {
+        let cargo_toml_path = path.join("Cargo.toml");
+        let content = fs::read_to_string(cargo_toml_path)?;
+        let cargo_toml: Value = toml::from_str(&content)?;
+
+        let mut scripts = Vec::new();
+
+        // Add default Cargo commands
+        scripts.extend(vec![
+            Script {
+                name: "build".to_string(),
+                command: "cargo build".to_string(),
+                description: Some("Compile the current package".to_string()),
+                shortcut: Some('b'),
+                script_type: ScriptType::Build,
+            },
+            Script {
+                name: "run".to_string(),
+                command: "cargo run".to_string(),
+                description: Some("Run the main binary of the current package".to_string()),
+                shortcut: Some('r'),
+                script_type: ScriptType::Development,
+            },
+            Script {
+                name: "test".to_string(),
+                command: "cargo test".to_string(),
+                description: Some("Run the tests".to_string()),
+                shortcut: Some('t'),
+                script_type: ScriptType::Test,
+            },
+            Script {
+                name: "check".to_string(),
+                command: "cargo check".to_string(),
+                description: Some(
+                    "Analyze the current package and report errors, but don't build object files"
+                        .to_string(),
+                ),
+                shortcut: Some('c'),
+                script_type: ScriptType::Other,
+            },
+        ]);
+
+        // Parse custom scripts from [package.metadata.scripts]
+        if let Some(package) = cargo_toml.get("package") {
+            if let Some(metadata) = package.get("metadata") {
+                if let Some(custom_scripts) = metadata.get("scripts") {
+                    if let Some(script_table) = custom_scripts.as_table() {
+                        for (name, value) in script_table {
+                            if let Some(command) = value.as_str() {
+                                scripts.push(Script {
+                                    name: name.clone(),
+                                    command: command.to_string(),
+                                    description: None, // You could add descriptions in Cargo.toml if desired
+                                    shortcut: None,
+                                    script_type: ScriptType::Other,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Parse binary targets
+        if let Some(bin) = cargo_toml.get("bin") {
+            if let Some(binaries) = bin.as_array() {
+                for binary in binaries {
+                    if let Some(name) = binary.get("name").and_then(|n| n.as_str()) {
+                        scripts.push(Script {
+                            name: format!("run:{}", name),
+                            command: format!("cargo run --bin {}", name),
+                            description: Some(format!("Run the {} binary", name)),
+                            shortcut: None,
+                            script_type: ScriptType::Development,
+                        });
+                    }
+                }
+            }
+        }
+
+        Ok(scripts)
+    }
+}
+
+fn detect_package_manager_in_dir(dir: &Path) -> Option<Box<dyn PackageManager>> {
+    if let Some(npm) = NodePackageManager::detect(dir) {
+        Some(Box::new(npm))
+    } else if let Some(rust) = RustPackageManager::detect(dir) {
+        Some(Box::new(rust))
+    } else {
+        None
+    }
+}
+
+fn search_upwards_for_package_manager(dir: &Path) -> Option<(Box<dyn PackageManager>, PathBuf)> {
+    let mut current_dir = dir;
+    let home_dir = dirs::home_dir()?;
+
+    while current_dir >= home_dir.as_path() {
+        if let Some(pm) = detect_package_manager_in_dir(current_dir) {
+            return Some((pm, current_dir.to_path_buf()));
+        }
+        current_dir = current_dir.parent()?;
+    }
+
+    None
 }
 
 struct App {
@@ -575,12 +701,16 @@ fn main() -> Result<()> {
         std::env::set_current_dir(dir)?;
     }
 
-    // Find package.json
-    let package_json = find_package_json().context("Could not find package.json")?;
-    let scripts = parse_scripts(&package_json)?;
+    // Detect package manager
+    let current_dir = std::env::current_dir()?;
+    let (package_manager, project_dir) = search_upwards_for_package_manager(&current_dir)
+        .context("Could not detect package manager")?;
+
+    // Find scripts
+    let scripts = package_manager.parse_scripts(&project_dir)?;
 
     if scripts.is_empty() {
-        println!("No scripts found in package.json");
+        println!("No scripts found");
         return Ok(());
     }
 
@@ -596,10 +726,6 @@ fn main() -> Result<()> {
         }
         return Ok(());
     }
-
-    // Detect package manager
-    let package_manager = PackageManager::detect(package_json.parent().unwrap())
-        .context("Could not detect package manager")?;
 
     // If a script name is provided, run it directly
     if let Some(script_name) = cli.script {
@@ -659,7 +785,11 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn run_script(package_manager: &PackageManager, script: &str, args: &[String]) -> Result<i32> {
+fn run_script(
+    package_manager: &Box<dyn PackageManager>,
+    script: &str,
+    args: &[String],
+) -> Result<i32> {
     let mut command = package_manager.run_command(script);
     command.args(args);
 
@@ -730,7 +860,7 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
 }
 
 fn run_script_with_env(
-    package_manager: &PackageManager,
+    package_manager: &Box<dyn PackageManager>,
     script: &str,
     args: &[String],
     env_vars: &HashMap<String, String>,

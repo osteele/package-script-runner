@@ -2,13 +2,13 @@
 name = "package-script-runner"
 version = "0.1.0"
 edition = "2021"
-description = "A fast TUI-based script selector for npm etc. projects"
+description = "A fast TUI-based script selector for npm, Rust, and other projects"
 authors = ["Oliver Steele <oliver.steele@gmail.com>"]
 license = "MIT"
 readme = "README.md"
 homepage = "https://github.com/osteele/package-script-runner"
 repository = "https://github.com/osteele/package-script-runner"
-keywords = ["cli", "tui", "nodejs", "npm", "development-tools"]
+keywords = ["cli", "tui", "nodejs", "npm", "rust", "development-tools"]
 categories = ["command-line-utilities", "development-tools"]
 
 [[bin]]
@@ -25,3 +25,4 @@ anyhow = "1.0"
 dirs = "5.0"
 walkdir = "2.4"
 which = "5.0"
+toml = "0.7.3"

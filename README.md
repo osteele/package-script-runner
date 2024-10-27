@@ -2,24 +2,27 @@
 
 <img src="docs/logo.svg" width="100" alt="Package Script Runner Logo">
 
-A fast TUI-based script selector for Node.js npm, bun, and deno projects.
+A fast TUI-based script selector for Node.js (npm, bun, deno) and Rust projects.
 Quickly find and run package scripts with keyboard shortcuts, search, and smart
-package manager detection.
+project type detection.
 
 ## Features
 
 - 🚀 **Fast TUI Interface**: Navigate and run scripts quickly using keyboard shortcuts
 - 🔍 **Smart Search**: Fuzzy find scripts by name, command, or description
 - 🎨 **Color Coded**: Scripts are color-coded by type (build, test, dev, etc.)
-- 📦 **Multi-Package Manager Support**:
-  - npm
-  - yarn
-  - pnpm
-  - bun
-  - deno
+- 📦 **Multi-Project Support**:
+  - Node.js:
+    - npm
+    - yarn
+    - pnpm
+    - bun
+    - deno
+  - Rust:
+    - Cargo
 - 📁 **Smart Detection**:
-  - Automatically detects the right package manager
-  - Finds `package.json` in parent directories
+  - Automatically detects the right project type and package manager
+  - Finds `package.json` or `Cargo.toml` in parent directories
   - Stops at home directory
 - ⌨️ **Keyboard Shortcuts**: Quick access to common scripts (`d` for dev, `t`
   for test, etc.)
@@ -68,7 +71,7 @@ This should display the version number of PSR.
 
 ## Usage
 
-Navigate to any directory containing a `package.json` (or parent directory) and
+Navigate to any directory containing a `package.json` or `Cargo.toml` (or parent directory) and
 run:
 
 ```bash
@@ -200,13 +203,14 @@ psr --version
 
 ## Configuration
 
-Package Script Runner automatically detects your package manager through:
+Package Script Runner automatically detects your project type through:
 1. Lock files:
    - `package-lock.json` (npm)
    - `yarn.lock` (yarn)
    - `pnpm-lock.yaml` (pnpm)
    - `bun.lockb` (bun)
    - `deno.lock` (deno)
+   - `Cargo.toml` (Rust)
 2. Config files (fallback):
    - `.npmrc`
    - `.yarnrc`/`.yarnrc.yml`
