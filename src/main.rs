@@ -19,7 +19,7 @@ use ratatui::{
 use std::{
     collections::HashMap,
     env,
-    io::stdout,
+    io::{stdout, Write},
     path::{Path, PathBuf},
     str::FromStr,
 };
@@ -347,6 +347,10 @@ struct Cli {
     /// Additional arguments to pass to the script
     #[arg(trailing_var_arg = true)]
     args: Vec<String>,
+
+    /// Use TUI mode instead of command-line interface
+    #[arg(long)]
+    tui: bool,
 }
 
 impl Cli {
@@ -384,6 +388,89 @@ fn find_synonym_script(scripts: &[Script], name: &str) -> Option<String> {
         }),
         _ => None,
     }
+}
+
+// Add this new function
+fn run_cli_mode(scripts: &[Script], _theme: Theme) -> Result<Option<String>> {
+    println!("Available scripts (press key to select):");
+    println!("[t] Switch to TUI mode");
+
+    let mut numbered_scripts = Vec::new();
+
+    // Print scripts with shortcuts first
+    scripts
+        .iter()
+        .filter(|s| s.shortcut.is_some())
+        .for_each(|script| {
+            println!(
+                "[{}] {} ({})",
+                script.shortcut.unwrap(),
+                script.name,
+                script.command
+            );
+        });
+
+    // Collect scripts without shortcuts
+    let remaining_scripts: Vec<_> = scripts.iter().filter(|s| s.shortcut.is_none()).collect();
+
+    // Print divider if we have numeric options
+    if !remaining_scripts.is_empty() {
+        println!("---");
+    }
+
+    // Print numbered options for remaining scripts (up to 9)
+    remaining_scripts
+        .iter()
+        .take(9)
+        .enumerate()
+        .for_each(|(i, script)| {
+            println!("[{}] {} ({})", i + 1, script.name, script.command);
+            numbered_scripts.push(script);
+        });
+
+    if remaining_scripts.len() > 9 {
+        println!("\nAdditional scripts (requires TUI mode):");
+        remaining_scripts.iter().skip(9).for_each(|script| {
+            println!("    {} ({})", script.name, script.command);
+        });
+    }
+
+    print!("\nPress a key to select a script, or 'q' to quit> ");
+    std::io::stdout().flush()?;
+
+    // Read single keypress
+    enable_raw_mode()?;
+    if let Event::Key(key) = event::read()? {
+        disable_raw_mode()?;
+        match key.code {
+            KeyCode::Char('t') => return Ok(Some("__TUI_MODE__".to_string())), // Special sentinel value
+            KeyCode::Char('q') => return Ok(None),
+            KeyCode::Char(c) => {
+                // Check for letter shortcuts
+                if let Some(script) = scripts.iter().find(|s| s.shortcut == Some(c)) {
+                    return Ok(Some(script.name.clone()));
+                }
+                // Check for number shortcuts
+                if let Some(digit) = c.to_digit(10) {
+                    if digit > 0 && (digit as usize) <= numbered_scripts.len() {
+                        return Ok(Some(numbered_scripts[digit as usize - 1].name.clone()));
+                    }
+                }
+            }
+            KeyCode::Esc => return Ok(None),
+            _ => {}
+        }
+    }
+    disable_raw_mode()?;
+
+    Ok(None)
+}
+
+// Add near the top with other types
+#[derive(Debug, Clone, Copy)]
+enum Mode {
+    CLI,
+    TUI,
 }
 
 fn main() -> Result<()> {
@@ -441,38 +528,52 @@ fn main() -> Result<()> {
         std::process::exit(exit_code);
     }
 
-    // Setup terminal
-    stdout().execute(EnterAlternateScreen)?;
+    let mut mode = if cli.tui { Mode::TUI } else { Mode::CLI };
 
-    // Run TUI
     loop {
-        enable_raw_mode()?;
-        let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
-        let mut app = App::new(scripts.clone(), effective_theme);
-        let result = run_app(&mut terminal, &mut app);
-
-        // Cleanup terminal
-        disable_raw_mode()?;
-        stdout().execute(LeaveAlternateScreen)?;
-
-        // Run selected script
-        if let Ok(Some(script)) = result {
-            let exit_code = run_script(&package_manager, &script, &[])?;
-
-            if cli.r#loop {
-                // Display splash screen with error code
-                if exit_code != 0 {
-                    display_error_splash(&mut terminal, exit_code)?;
-                }
-                // Re-setup terminal for next iteration
+        match mode {
+            Mode::TUI => {
                 stdout().execute(EnterAlternateScreen)?;
-                enable_raw_mode()?;
-            } else {
-                // Exit with the script's exit code
-                std::process::exit(exit_code);
+                loop {
+                    enable_raw_mode()?;
+                    let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
+                    let mut app = App::new(scripts.clone(), effective_theme);
+                    let result = run_app(&mut terminal, &mut app);
+
+                    // Cleanup terminal
+                    disable_raw_mode()?;
+                    stdout().execute(LeaveAlternateScreen)?;
+
+                    // Run selected script
+                    if let Ok(Some(script)) = result {
+                        let exit_code = run_script(&package_manager, &script, &[])?;
+
+                        if cli.r#loop {
+                            if exit_code != 0 {
+                                display_error_splash(&mut terminal, exit_code)?;
+                            }
+                            stdout().execute(EnterAlternateScreen)?;
+                            enable_raw_mode()?;
+                        } else {
+                            std::process::exit(exit_code);
+                        }
+                    } else {
+                        break;
+                    }
+                }
+                break;
             }
-        } else {
-            break;
+            Mode::CLI => {
+                if let Ok(Some(script)) = run_cli_mode(&scripts, effective_theme) {
+                    if script == "__TUI_MODE__" {
+                        mode = Mode::TUI;
+                        continue;
+                    }
+                    let exit_code = run_script(&package_manager, &script, &[])?;
+                    std::process::exit(exit_code);
+                }
+                break;
+            }
         }
     }
 

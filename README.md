@@ -75,14 +75,15 @@ This should display the version number of PSR.
 
 ## Usage
 
-Navigate to any directory containing a `package.json`, `pyproject.toml`, `requirements.txt`, or `Cargo.toml` (or parent directory) and
-run:
+Navigate to any directory containing a `package.json`, `pyproject.toml`, `requirements.txt`, or `Cargo.toml` (or parent directory) and run:
 
 ```bash
 psr [SCRIPT_NAME] [-- SCRIPT_ARGS...]
 ```
 
-If a script name is provided as a positional argument, PSR will run that script directly without launching the TUI. You can pass additional arguments to the script by adding `--` followed by the arguments.
+By default, PSR runs in a simple CLI mode that shows available scripts and their shortcuts. Press the corresponding key to run a script, 't' to switch to TUI mode, or 'q' to quit.
+
+If a script name is provided as a positional argument, PSR will run that script directly without launching any interface. You can pass additional arguments to the script by adding `--` followed by the arguments.
 
 ### Command Line Options
 
@@ -95,12 +96,31 @@ Arguments:
 
 Options:
   -d, --dir <PATH>   Start in a specific directory instead of current directory
-  -l, --list         List available scripts without launching TUI
+  -l, --list         List available scripts without launching interface
+      --tui          Start in TUI mode instead of CLI mode
       --theme <THEME> Set the color theme (dark or light) [env: PSR_THEME=] [default: dark]
   -v, --verbose      Show verbose output
   -h, --help         Print help information
   -V, --version      Print version information
 ```
+
+### Interface Modes
+
+PSR offers two interface modes:
+
+1. **CLI Mode** (default):
+   - Simple command-line interface
+   - Shows available scripts with their shortcuts
+   - Use letter shortcuts for common scripts
+   - Numbers 1-9 for additional scripts
+   - Press 't' to switch to TUI mode
+   - Press 'q' to quit
+
+2. **TUI Mode** (access with `--tui` or by pressing 't' in CLI mode):
+   - Full terminal user interface
+   - Rich preview and navigation
+   - Advanced search capabilities
+   - More extensive script list
 
 ### Environment Variables
 
