@@ -1,5 +1,6 @@
 mod package_managers;
 mod script_type;
+mod config;
 
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -18,7 +19,6 @@ use ratatui::{
 };
 use std::{
     collections::HashMap,
-    env,
     io::{stdout, Write},
     path::{Path, PathBuf},
     str::FromStr,
@@ -26,6 +26,7 @@ use std::{
 
 use crate::package_managers::{detect_package_manager_in_dir, PackageManager};
 use crate::script_type::{Script, ScriptType, SPECIAL_SCRIPTS, find_synonym_script};
+use crate::config::{Settings, Theme};
 
 fn search_upwards_for_package_manager(dir: &Path) -> Option<(Box<dyn PackageManager>, PathBuf)> {
     let mut current_dir = dir;
@@ -269,13 +270,6 @@ fn run_app(
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-enum Theme {
-    Dark,
-    Light,
-    NoColor,
-}
-
 impl ScriptType {
     fn color(&self, theme: Theme) -> Color {
         match theme {
@@ -336,8 +330,8 @@ struct Cli {
     list: bool,
 
     /// Set the color theme (dark or light)
-    #[arg(long, env = "PSR_THEME", default_value = "dark")]
-    theme: Theme,
+    #[arg(long)]
+    theme: Option<Theme>,
 
     /// Return to TUI after running a script instead of exiting
     #[arg(long)]
@@ -359,12 +353,8 @@ struct Cli {
 }
 
 impl Cli {
-    fn get_effective_theme(&self) -> Theme {
-        if env::var_os("NO_COLOR").is_some() {
-            Theme::NoColor
-        } else {
-            self.theme
-        }
+    fn get_effective_theme(&self, settings: &Settings) -> Theme {
+        settings.get_effective_theme(self.theme)
     }
 }
 
@@ -525,7 +515,7 @@ fn run_interactive_mode(
                 break;
             }
             Mode::CLI => {
-                if let Ok(Some(script)) = run_cli_mode(&scripts, cli.get_effective_theme()) {
+                if let Ok(Some(script)) = run_cli_mode(&scripts, cli.get_effective_theme(&Settings::new().expect("Failed to load config"))) {
                     if script == "__TUI_MODE__" {
                         mode = Mode::TUI;
                         continue;
@@ -549,7 +539,8 @@ fn run_tui_mode(
     loop {
         enable_raw_mode()?;
         let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
-        let mut app = App::new(scripts.to_vec(), cli.get_effective_theme());
+        let theme = cli.get_effective_theme(&Settings::new().expect("Failed to load config"));
+        let mut app = App::new(scripts.to_vec(), theme);
         let result = run_app(&mut terminal, &mut app);
 
         // Cleanup terminal

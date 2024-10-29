@@ -254,7 +254,7 @@ Show version:
 psr --version
 ```
 
-## Configuration
+## Project Type Detection
 
 Package Script Runner automatically detects your project type through:
 1. Lock files:
@@ -271,6 +271,30 @@ Package Script Runner automatically detects your project type through:
    - `pyproject.toml`
    - `requirements.txt`
    - `uv.toml`
+
+## Configuration
+
+### Config File
+
+PSR looks for a configuration file in the following locations (in order):
+1. `.pkr.toml` in the current directory
+2. `.pkr.toml` in your home directory
+
+The configuration file uses TOML format. Currently supported options:
+
+- `theme`: Set the color theme (dark or light)
+
+```toml
+# Theme can be "dark", "light", or "nocolor"
+theme = "dark" # Optional, defaults to "dark"
+```
+
+Configuration priority (highest to lowest):
+1. Command line arguments (e.g., `--theme light`)
+2. Environment variables (`NO_COLOR`, then `PSR_THEME`)
+3. Project config file (`./.pkr.toml`)
+4. User config file (`~/.pkr.toml`)
+5. Built-in defaults
 
 ### Theming
 
