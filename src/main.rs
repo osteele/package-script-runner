@@ -1,32 +1,25 @@
+mod config;
 mod package_managers;
 mod script_type;
-mod config;
+mod tui;
 
 use anyhow::{Context, Result};
 use clap::Parser;
 use crossterm::{
     event::{self, Event, KeyCode},
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-    ExecutableCommand,
-};
-use ratatui::{
-    backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
-    text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap},
-    Terminal,
+    terminal::{disable_raw_mode, enable_raw_mode},
 };
 use std::{
     collections::HashMap,
-    io::{stdout, Write},
+    io::Write,
     path::{Path, PathBuf},
     str::FromStr,
 };
 
-use crate::package_managers::{detect_package_manager_in_dir, PackageManager};
-use crate::script_type::{Script, ScriptType, SPECIAL_SCRIPTS, find_synonym_script};
 use crate::config::{Settings, Theme};
+use crate::package_managers::{detect_package_manager_in_dir, PackageManager};
+use crate::script_type::{find_synonym_script, Script, SPECIAL_SCRIPTS};
+use crate::tui::App;
 
 fn search_upwards_for_package_manager(dir: &Path) -> Option<(Box<dyn PackageManager>, PathBuf)> {
     let mut current_dir = dir;
@@ -40,376 +33,6 @@ fn search_upwards_for_package_manager(dir: &Path) -> Option<(Box<dyn PackageMana
     }
 
     None
-}
-
-struct App {
-    scripts: Vec<Script>,
-    state: ListState,
-    search_mode: bool,
-    search_query: String,
-    filtered_indices: Vec<usize>,
-    theme: Theme,
-    projects: HashMap<String, PathBuf>,
-    projects_state: ListState,
-}
-
-impl App {
-    fn new(scripts: Vec<Script>, theme: Theme, projects: HashMap<String, PathBuf>, current_dir: &Path) -> Self {
-        let filtered_indices: Vec<usize> = (0..scripts.len()).collect();
-
-        // Create a new HashMap with the current directory as first entry if it's not a saved project
-        let mut ordered_projects = HashMap::new();
-        let is_saved_project = projects.iter().any(|(_, path)| path.as_path() == current_dir);
-
-        if !is_saved_project {
-            ordered_projects.insert(
-                "Current Directory".to_string(),
-                current_dir.to_path_buf()
-            );
-        }
-
-        // Add all saved projects
-        ordered_projects.extend(projects);
-
-        let mut app = Self {
-            scripts,
-            state: ListState::default(),
-            search_mode: false,
-            search_query: String::new(),
-            filtered_indices,
-            theme,
-            projects: ordered_projects,
-            projects_state: ListState::default(),
-        };
-
-        app.state.select(Some(0));
-        if !app.projects.is_empty() {
-            app.projects_state.select(Some(0));
-        }
-        app
-    }
-
-    fn next(&mut self) {
-        let i = match self.state.selected() {
-            Some(i) => (i + 1) % self.filtered_indices.len(),
-            None => 0,
-        };
-        self.state.select(Some(i));
-    }
-
-    fn previous(&mut self) {
-        let i = match self.state.selected() {
-            Some(i) => (i + self.filtered_indices.len() - 1) % self.filtered_indices.len(),
-            None => 0,
-        };
-        self.state.select(Some(i));
-    }
-
-    #[allow(dead_code)]
-    fn update_search(&mut self) {
-        self.filtered_indices = self
-            .scripts
-            .iter()
-            .enumerate()
-            .filter(|(_, script)| script.matches_search(&self.search_query))
-            .map(|(i, _)| i)
-            .collect();
-
-        if !self.filtered_indices.is_empty() {
-            self.state.select(Some(0));
-        } else {
-            self.state.select(None);
-        }
-    }
-
-    fn get_selected_script(&self) -> Option<&Script> {
-        self.state
-            .selected()
-            .and_then(|i| self.filtered_indices.get(i))
-            .map(|&i| &self.scripts[i])
-    }
-
-    fn next_project(&mut self) {
-        let len = self.projects.len();
-        if len == 0 { return; }
-        let i = match self.projects_state.selected() {
-            Some(i) => (i + 1) % len,
-            None => 0,
-        };
-        self.projects_state.select(Some(i));
-    }
-
-    fn previous_project(&mut self) {
-        let len = self.projects.len();
-        if len == 0 { return; }
-        let i = match self.projects_state.selected() {
-            Some(i) => (i + len - 1) % len,
-            None => 0,
-        };
-        self.projects_state.select(Some(i));
-    }
-
-    fn get_selected_project(&self) -> Option<(&String, &PathBuf)> {
-        self.projects_state.selected().and_then(|i| {
-            self.projects
-                .iter()
-                .nth(i)
-        })
-    }
-
-    // Add this helper method
-    fn is_current_dir_project(&self, name: &str) -> bool {
-        name == "Current Directory"
-    }
-}
-
-fn render_script_preview(script: &Script, theme: Theme) -> Vec<Line> {
-    vec![
-        Line::from(vec![
-            Span::styled("Name: ", Style::default().add_modifier(Modifier::BOLD)),
-            Span::raw(&script.name),
-        ]),
-        Line::from(vec![
-            Span::styled("Type: ", Style::default().add_modifier(Modifier::BOLD)),
-            Span::styled(
-                format!("{:?}", script.script_type),
-                Style::default().fg(script.script_type.color(theme)),
-            ),
-        ]),
-        Line::from(vec![
-            Span::styled("Command: ", Style::default().add_modifier(Modifier::BOLD)),
-            Span::raw(&script.command),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "Description: ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
-            Span::raw(
-                script
-                    .description
-                    .as_deref()
-                    .unwrap_or("No description available"),
-            ),
-        ]),
-    ]
-}
-
-fn run_app(
-    terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
-    app: &mut App,
-) -> Result<Option<String>> {
-    loop {
-        terminal.draw(|f| {
-            let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(3),    // Projects list
-                    Constraint::Min(3),       // Scripts list
-                    Constraint::Length(5),    // Details
-                    Constraint::Length(3),    // Help
-                ].as_ref())
-                .split(f.size());
-
-            // Projects list (if not empty)
-            if !app.projects.is_empty() {
-                let projects: Vec<ListItem> = app.projects
-                    .iter()
-                    .map(|(name, path)| {
-                        let style = if app.is_current_dir_project(name) {
-                            Style::default()
-                                .add_modifier(Modifier::BOLD)
-                                .add_modifier(Modifier::ITALIC)
-                        } else {
-                            Style::default().add_modifier(Modifier::BOLD)
-                        };
-
-                        ListItem::new(Line::from(vec![
-                            Span::styled(name.clone(), style),
-                            Span::raw(": "),
-                            Span::raw(path.display().to_string()),
-                        ]))
-                    })
-                    .collect();
-
-                let projects_list = List::new(projects)
-                    .block(Block::default().title("Project (←/→ to switch)").borders(Borders::ALL))
-                    .highlight_style(
-                        Style::default()
-                            .bg(Color::DarkGray)
-                            .add_modifier(Modifier::BOLD),
-                    );
-
-                f.render_stateful_widget(projects_list, chunks[0], &mut app.projects_state);
-            }
-
-            // Search bar
-            let search_text = if app.search_mode {
-                format!("Search: {}", app.search_query)
-            } else {
-                "Press '/' to search".to_string()
-            };
-
-            let search_style = if app.search_mode {
-                Style::default().add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().add_modifier(Modifier::DIM)
-            };
-
-            f.render_widget(
-                Paragraph::new(search_text).style(search_style),
-                Rect::new(chunks[1].x, chunks[1].y, chunks[1].width, 1),
-            );
-
-            // Scripts list
-            let items: Vec<ListItem> = app
-                .filtered_indices
-                .iter()
-                .map(|&i| {
-                    let script = &app.scripts[i];
-                    let is_priority = SPECIAL_SCRIPTS.contains(&script.name.as_str());
-                    let shortcut = script
-                        .shortcut
-                        .map(|c| format!("[{}] ", c))
-                        .unwrap_or_default();
-
-                    let content = if i > 0
-                        && is_priority
-                            != SPECIAL_SCRIPTS.contains(&app.scripts[i - 1].name.as_str())
-                    {
-                        vec![
-                            Line::from("───────────────────"),
-                            Line::from(vec![
-                                Span::styled(
-                                    format!("{}{}", shortcut, script.name),
-                                    Style::default()
-                                        .fg(script.script_type.color(app.theme))
-                                        .add_modifier(Modifier::BOLD),
-                                ),
-                                Span::raw(": "),
-                                Span::raw(&script.command),
-                            ]),
-                        ]
-                    } else {
-                        vec![Line::from(vec![
-                            Span::styled(
-                                format!("{}{}", shortcut, script.name),
-                                Style::default()
-                                    .fg(script.script_type.color(app.theme))
-                                    .add_modifier(Modifier::BOLD),
-                            ),
-                            Span::raw(": "),
-                            Span::raw(&script.command),
-                        ])]
-                    };
-                    ListItem::new(content)
-                })
-                .collect();
-
-            let list = List::new(items)
-                .block(Block::default().title("Scripts").borders(Borders::ALL))
-                .highlight_style(Style::default().bg(Color::DarkGray));
-
-            f.render_stateful_widget(list, chunks[1], &mut app.state);
-
-            // Preview panel
-            if let Some(script) = app.get_selected_script() {
-                let preview = Paragraph::new(render_script_preview(script, app.theme))
-                    .block(Block::default().title("Details").borders(Borders::ALL))
-                    .wrap(Wrap { trim: true });
-                f.render_widget(preview, chunks[2]);
-            }
-
-            // Help footer
-            let help_text = vec![
-                Line::from(vec![
-                    Span::styled("Navigation: ", Style::default().add_modifier(Modifier::BOLD)),
-                    Span::raw("↑/↓ Scripts, ←/→ Projects, "),
-                    Span::styled("Search: ", Style::default().add_modifier(Modifier::BOLD)),
-                    Span::raw("/, "),
-                    Span::styled("Select: ", Style::default().add_modifier(Modifier::BOLD)),
-                    Span::raw("Enter, "),
-                    Span::styled("Quit: ", Style::default().add_modifier(Modifier::BOLD)),
-                    Span::raw("q/Esc"),
-                ]),
-            ];
-            let help = Paragraph::new(help_text)
-                .block(Block::default().title("Help").borders(Borders::ALL))
-                .alignment(ratatui::layout::Alignment::Center);
-            f.render_widget(help, chunks[3]);
-        })?;
-
-        if let Event::Key(key) = event::read()? {
-            match key.code {
-                // Script navigation
-                KeyCode::Up | KeyCode::Char('k') => app.previous(),
-                KeyCode::Down | KeyCode::Char('j') => app.next(),
-
-                // Project navigation
-                KeyCode::Left => app.previous_project(),
-                KeyCode::Right => app.next_project(),
-
-                // Script selection
-                KeyCode::Enter => {
-                    if let Some(script) = app.get_selected_script() {
-                        return Ok(Some(script.name.clone()));
-                    }
-                }
-
-                // Project switching
-                KeyCode::Char('\t') => {
-                    if let Some((name, _)) = app.get_selected_project() {
-                        if !app.is_current_dir_project(name) {
-                            return Ok(Some(format!("__SWITCH_PROJECT__{}", name)));
-                        }
-                    }
-                }
-
-                // Search and quit
-                KeyCode::Char('/') => {
-                    app.search_mode = true;
-                    app.search_query.clear();
-                }
-                KeyCode::Char('q') | KeyCode::Esc => return Ok(None),
-
-                // Shortcut keys
-                KeyCode::Char(c) => {
-                    if let Some(script) = app.scripts.iter().find(|s| s.shortcut == Some(c)) {
-                        return Ok(Some(script.name.clone()));
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-}
-
-impl ScriptType {
-    fn color(&self, theme: Theme) -> Color {
-        match theme {
-            Theme::NoColor => Color::Reset,
-            Theme::Dark => match self {
-                ScriptType::Build => Color::Rgb(255, 204, 0),
-                ScriptType::Development => Color::Rgb(0, 255, 0),
-                ScriptType::Test => Color::Rgb(0, 255, 255),
-                ScriptType::Deployment => Color::Rgb(0, 191, 255),
-                ScriptType::Format => Color::Rgb(191, 0, 255),
-                ScriptType::Lint => Color::Rgb(255, 128, 0),
-                ScriptType::Clean => Color::Rgb(192, 192, 192),
-                ScriptType::Other => Color::White,
-            },
-            Theme::Light => match self {
-                ScriptType::Build => Color::Rgb(204, 102, 0),
-                ScriptType::Development => Color::Rgb(0, 153, 0),
-                ScriptType::Test => Color::Rgb(0, 102, 204),
-                ScriptType::Deployment => Color::Rgb(153, 0, 0),
-                ScriptType::Format => Color::Rgb(102, 0, 204),
-                ScriptType::Lint => Color::Rgb(204, 51, 0),
-                ScriptType::Clean => Color::Rgb(64, 64, 64),
-                ScriptType::Other => Color::Black,
-            },
-        }
-    }
 }
 
 impl FromStr for Theme {
@@ -624,7 +247,10 @@ fn handle_direct_script_execution(
     let script_to_run = match command.as_str() {
         cmd if SPECIAL_SCRIPTS.contains(&cmd) => {
             if cli.script.is_some() {
-                anyhow::bail!("Cannot specify script name with special command '{}'", command);
+                anyhow::bail!(
+                    "Cannot specify script name with special command '{}'",
+                    command
+                );
             }
             if let Some(script) = scripts.iter().find(|s| &s.name == command) {
                 script.name.clone()
@@ -651,7 +277,10 @@ fn handle_direct_script_execution(
                 }
             }
         }
-        _ => anyhow::bail!("Unknown command '{}'. Use 'run <script>' for custom scripts", command),
+        _ => anyhow::bail!(
+            "Unknown command '{}'. Use 'run <script>' for custom scripts",
+            command
+        ),
     };
 
     let mut env_vars = std::env::vars().collect::<HashMap<String, String>>();
@@ -673,13 +302,14 @@ fn run_interactive_mode(
     loop {
         match mode {
             Mode::TUI => {
-                if let Some(exit_code) = run_tui_mode(cli, &scripts, package_manager, &settings)? {
-                    std::process::exit(exit_code);
-                }
+                run_tui_mode(cli, &scripts, package_manager, &settings)?;
                 break;
             }
             Mode::CLI => {
-                if let Ok(Some(script)) = run_cli_mode(&scripts, cli.get_effective_theme(&Settings::new().expect("Failed to load config"))) {
+                if let Ok(Some(script)) = run_cli_mode(
+                    &scripts,
+                    cli.get_effective_theme(&Settings::new().expect("Failed to load config")),
+                ) {
                     if script == "__TUI_MODE__" {
                         mode = Mode::TUI;
                         continue;
@@ -696,40 +326,37 @@ fn run_interactive_mode(
 
 fn run_tui_mode(
     cli: &Cli,
-    scripts: &[Script],
-    package_manager: &Box<dyn PackageManager>,
+    scripts: &Vec<Script>,
+    _package_manager: &Box<dyn PackageManager>,
     settings: &Settings,
-) -> Result<Option<i32>> {
-    stdout().execute(EnterAlternateScreen)?;
+) -> Result<()> {
+    let current_dir = std::env::current_dir()?;
+    let mut current_scripts = scripts.clone();
+
     loop {
-        enable_raw_mode()?;
-        let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
-        let theme = cli.get_effective_theme(&Settings::new().expect("Failed to load config"));
-        let current_dir = std::env::current_dir()?;
-        let mut app = App::new(scripts.to_vec(), theme, settings.projects.clone(), &current_dir);
-        let result = run_app(&mut terminal, &mut app);
-        // Cleanup terminal
-        disable_raw_mode()?;
-        stdout().execute(LeaveAlternateScreen)?;
+        let app = App::new(
+            current_scripts.clone(),
+            cli.get_effective_theme(settings),
+            settings.projects.clone(),
+            &current_dir,
+        );
 
-        // Run selected script
-        if let Ok(Some(script)) = result {
-            let exit_code = run_script(&package_manager, &script, &[])?;
+        let should_quit = tui::run_app(app)?;
 
-            if cli.r#loop {
-                if exit_code != 0 {
-                    display_error_splash(&mut terminal, exit_code)?;
-                }
-                stdout().execute(EnterAlternateScreen)?;
-                enable_raw_mode()?;
-            } else {
-                return Ok(Some(exit_code));
-            }
-        } else {
+        // Check if we should reload (happens after project switch)
+        if !std::env::current_dir()?.eq(&current_dir) {
+            // Reload package manager and scripts from new directory
+            let new_dir = std::env::current_dir()?;
+            let (new_pm, project_dir) = search_upwards_for_package_manager(&new_dir)
+                .context("Could not detect package manager")?;
+            current_scripts = new_pm.parse_scripts(&project_dir)?;
+        }
+        if should_quit {
             break;
         }
     }
-    Ok(None)
+
+    Ok(())
 }
 
 fn main() -> Result<()> {
@@ -768,7 +395,9 @@ fn main() -> Result<()> {
             .cloned()
             .ok_or_else(|| anyhow::anyhow!("Project '{}' not found", project))?
     } else {
-        cli.dir.clone().unwrap_or_else(|| std::env::current_dir().unwrap())
+        cli.dir
+            .clone()
+            .unwrap_or_else(|| std::env::current_dir().unwrap())
     };
 
     // Change to working directory
@@ -814,67 +443,6 @@ fn run_script(
     let status = command.status().context("Failed to run script")?;
 
     Ok(status.code().unwrap_or(-1))
-}
-
-fn display_error_splash(
-    terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
-    exit_code: i32,
-) -> Result<()> {
-    terminal.clear()?;
-
-    terminal.draw(|f| {
-        let size = f.size();
-        let block = Block::default().title("Script Error").borders(Borders::ALL);
-        let area = centered_rect(60, 20, size);
-        f.render_widget(block, area);
-
-        let text = vec![
-            Line::from(vec![
-                Span::raw("The script exited with code: "),
-                Span::styled(
-                    exit_code.to_string(),
-                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-                ),
-            ]),
-            Line::from(""),
-            Line::from("Press any key to continue..."),
-        ];
-
-        let paragraph = Paragraph::new(text)
-            .alignment(ratatui::layout::Alignment::Center)
-            .wrap(Wrap { trim: true });
-
-        f.render_widget(paragraph, area);
-    })?;
-
-    // Wait for a key press
-    loop {
-        if let Event::Key(_) = event::read()? {
-            break;
-        }
-    }
-
-    Ok(())
-}
-
-fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
-    let popup_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Percentage((100 - percent_y) / 2),
-            Constraint::Percentage(percent_y),
-            Constraint::Percentage((100 - percent_y) / 2),
-        ])
-        .split(r);
-
-    Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage((100 - percent_x) / 2),
-            Constraint::Percentage(percent_x),
-            Constraint::Percentage((100 - percent_x) / 2),
-        ])
-        .split(popup_layout[1])[1]
 }
 
 fn run_script_with_env(

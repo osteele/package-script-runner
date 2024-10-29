@@ -546,6 +546,7 @@ dependencies = [
  "crossterm",
  "dirs",
  "ratatui",
+ "scopeguard",
  "serde",
  "serde_json",
  "toml 0.7.8",
