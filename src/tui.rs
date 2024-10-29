@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use crossterm::{
     event::{self, Event, KeyCode},
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -13,14 +13,14 @@ use ratatui::{
     Terminal,
 };
 use scopeguard::defer;
-use std::{
-    collections::HashMap,
-    io::stdout,
-    path::{Path, PathBuf},
-};
+use std::io::stdout;
 
-use crate::config::Theme;
+use crate::project::Project;
 use crate::script_type::{Script, ScriptType, SPECIAL_SCRIPTS};
+use crate::{
+    config::{Settings, Theme},
+    project::create_project,
+};
 
 impl ScriptType {
     fn color(&self, theme: Theme) -> Color {
@@ -50,76 +50,65 @@ impl ScriptType {
     }
 }
 
-pub struct App {
+pub struct App<'a> {
+    project: &'a Project,
+    projects: &'a Vec<&'a Project>,
+    theme: Theme,
     scripts: Vec<Script>,
-    state: ListState,
     search_mode: bool,
     search_query: String,
-    filtered_indices: Vec<usize>,
-    theme: Theme,
-    projects: HashMap<String, PathBuf>,
-    projects_state: ListState,
+    visible_script_indices: Vec<usize>,
+    selected_project_state: ListState,
+    selected_script_state: ListState,
 }
 
-impl App {
+impl<'a> App<'a> {
     pub fn new(
-        scripts: Vec<Script>,
+        project: &'a Project,
+        projects: &'a Vec<&'a Project>,
         theme: Theme,
-        projects: HashMap<String, PathBuf>,
-        current_dir: &Path,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
+        let scripts = project.scripts()?;
         let filtered_indices: Vec<usize> = (0..scripts.len()).collect();
 
-        // Create a new HashMap with the current directory as first entry if it's not a saved project
-        let mut ordered_projects = HashMap::new();
-        let is_saved_project = projects
-            .iter()
-            .any(|(_, path)| path.as_path() == current_dir);
-
-        if !is_saved_project {
-            ordered_projects.insert("Current Directory".to_string(), current_dir.to_path_buf());
-        }
-
-        // Add all saved projects
-        ordered_projects.extend(projects);
-
         let mut app = Self {
+            project,
+            projects: &projects,
+            theme,
             scripts,
-            state: ListState::default(),
             search_mode: false,
             search_query: String::new(),
-            filtered_indices,
-            theme,
-            projects: ordered_projects,
-            projects_state: ListState::default(),
+            selected_script_state: ListState::default(),
+            visible_script_indices: filtered_indices,
+            selected_project_state: ListState::default(),
         };
 
-        app.state.select(Some(0));
+        app.selected_script_state.select(Some(0));
         if !app.projects.is_empty() {
-            app.projects_state.select(Some(0));
+            app.selected_project_state.select(Some(0));
         }
-        app
+        Ok(app)
     }
 
     fn next(&mut self) {
-        let i = match self.state.selected() {
-            Some(i) => (i + 1) % self.filtered_indices.len(),
+        let i = match self.selected_script_state.selected() {
+            Some(i) => (i + 1) % self.visible_script_indices.len(),
             None => 0,
         };
-        self.state.select(Some(i));
+        self.selected_script_state.select(Some(i));
     }
 
     fn previous(&mut self) {
-        let i = match self.state.selected() {
-            Some(i) => (i + self.filtered_indices.len() - 1) % self.filtered_indices.len(),
+        let i = match self.selected_script_state.selected() {
+            Some(i) => (i + self.visible_script_indices.len() - 1) % self.visible_script_indices.len(),
             None => 0,
         };
-        self.state.select(Some(i));
+        self.selected_script_state.select(Some(i));
     }
 
     #[allow(dead_code)]
     fn update_search(&mut self) {
-        self.filtered_indices = self
+        self.visible_script_indices = self
             .scripts
             .iter()
             .enumerate()
@@ -127,17 +116,17 @@ impl App {
             .map(|(i, _)| i)
             .collect();
 
-        if !self.filtered_indices.is_empty() {
-            self.state.select(Some(0));
+        if !self.visible_script_indices.is_empty() {
+            self.selected_script_state.select(Some(0));
         } else {
-            self.state.select(None);
+            self.selected_script_state.select(None);
         }
     }
 
     fn get_selected_script(&self) -> Option<&Script> {
-        self.state
+        self.selected_script_state
             .selected()
-            .and_then(|i| self.filtered_indices.get(i))
+            .and_then(|i| self.visible_script_indices.get(i))
             .map(|&i| &self.scripts[i])
     }
 
@@ -146,11 +135,11 @@ impl App {
         if len == 0 {
             return;
         }
-        let i = match self.projects_state.selected() {
+        let i = match self.selected_project_state.selected() {
             Some(i) => (i + 1) % len,
             None => 0,
         };
-        self.projects_state.select(Some(i));
+        self.set_project_by_index(i);
     }
 
     fn previous_project(&mut self) {
@@ -158,17 +147,28 @@ impl App {
         if len == 0 {
             return;
         }
-        let i = match self.projects_state.selected() {
+        let i = match self.selected_project_state.selected() {
             Some(i) => (i + len - 1) % len,
             None => 0,
         };
-        self.projects_state.select(Some(i));
+        self.set_project_by_index(i);
     }
 
-    fn get_selected_project(&self) -> Option<(&String, &PathBuf)> {
-        self.projects_state
-            .selected()
-            .and_then(|i| self.projects.iter().nth(i))
+    fn set_project_by_index(&mut self, i: usize) {
+        self.project = &self.projects[i];
+        self.scripts = self.project.scripts().context("error getting scripts").unwrap();
+        self.visible_script_indices = (0..self.scripts.len()).collect();
+        self.selected_project_state.select(Some(i));
+        self.selected_script_state.select(Some(0));
+    }
+
+    #[allow(dead_code)]
+    fn set_project(&'a mut self, project: &'a Project) {
+        let i = self.projects.iter().position(|p| p.path == project.path).unwrap();
+        self.selected_project_state.select(Some(i));
+        self.project = project;
+        self.scripts = self.project.scripts().context("error getting scripts").unwrap();
+        self.visible_script_indices = (0..self.scripts.len()).collect();
     }
 
     // Add this helper method
@@ -212,10 +212,28 @@ fn render_script_preview(script: &Script, theme: Theme) -> Vec<Line> {
 pub enum AppAction {
     Quit,
     RunScript(String),
-    SwitchProject(String),
 }
 
-pub fn run_app(mut app: App) -> Result<bool> {
+pub fn run_app(project: &Project, settings: &Settings) -> Result<()> {
+    // filter out projects where create_project returns None
+    let project_owners = &settings
+        .projects
+        .iter()
+        .filter_map(|(name, path)| create_project(name, path))
+        .collect::<Vec<Project>>();
+    // make a vec of references to the project owners
+    let mut project_owners_refs = project_owners.iter().map(|p| p).collect::<Vec<&Project>>();
+
+    // add project to the beginning of the list if it's not in the list
+    if !project_owners_refs
+        .iter()
+        .any(|p| p.path.as_path() == project.path.as_path())
+    {
+        project_owners_refs.insert(0, project);
+    }
+
+    let mut app = App::new(project, &project_owners_refs, settings.theme)?;
+
     let mut stdout = stdout();
     enable_raw_mode()?;
     stdout.execute(EnterAlternateScreen)?;
@@ -245,7 +263,7 @@ pub fn run_app(mut app: App) -> Result<bool> {
                     println!("Press 'q' to quit or any other key to continue...");
                     if let Event::Key(key) = event::read()? {
                         if key.code == KeyCode::Char('q') {
-                            return Ok(true);
+                            return Ok(());
                         }
                     }
                     std::io::stdout().execute(EnterAlternateScreen)?;
@@ -257,19 +275,11 @@ pub fn run_app(mut app: App) -> Result<bool> {
                     }
                 }
             }
-            AppAction::SwitchProject(project_switch) => {
-                if let Some(path) = app.projects.get(project_switch.as_str()).cloned() {
-                    std::env::set_current_dir(path)?;
-                    return Ok(false);
-                    // Caller reloads app with new directory
-                }
-                break;
-            }
         }
     }
 
     let _ = restore_terminal(terminal);
-    Ok(true)
+    Ok(())
 }
 
 fn run_app_loop(
@@ -296,19 +306,20 @@ fn run_app_loop(
                 let projects: Vec<ListItem> = app
                     .projects
                     .iter()
-                    .map(|(name, path)| {
-                        let style = if app.is_current_dir_project(name) {
-                            Style::default()
-                                .add_modifier(Modifier::BOLD)
-                                .add_modifier(Modifier::ITALIC)
-                        } else {
-                            Style::default().add_modifier(Modifier::BOLD)
-                        };
+                    .map(|project| {
+                        let style =
+                            if app.is_current_dir_project(project.name.as_deref().unwrap_or("")) {
+                                Style::default()
+                                    .add_modifier(Modifier::BOLD)
+                                    .add_modifier(Modifier::ITALIC)
+                            } else {
+                                Style::default().add_modifier(Modifier::BOLD)
+                            };
 
                         ListItem::new(Line::from(vec![
-                            Span::styled(name.clone(), style),
+                            Span::styled(project.name.as_deref().unwrap_or("").to_string(), style),
                             Span::raw(": "),
-                            Span::raw(path.display().to_string()),
+                            Span::raw(project.path.display().to_string()),
                         ]))
                     })
                     .collect();
@@ -325,7 +336,7 @@ fn run_app_loop(
                             .add_modifier(Modifier::BOLD),
                     );
 
-                f.render_stateful_widget(projects_list, chunks[0], &mut app.projects_state);
+                f.render_stateful_widget(projects_list, chunks[0], &mut app.selected_project_state);
             }
 
             // Search bar
@@ -348,7 +359,7 @@ fn run_app_loop(
 
             // Scripts list
             let items: Vec<ListItem> = app
-                .filtered_indices
+                .visible_script_indices
                 .iter()
                 .map(|&i| {
                     let script = &app.scripts[i];
@@ -395,7 +406,7 @@ fn run_app_loop(
                 .block(Block::default().title("Scripts").borders(Borders::ALL))
                 .highlight_style(Style::default().bg(Color::DarkGray));
 
-            f.render_stateful_widget(list, chunks[1], &mut app.state);
+            f.render_stateful_widget(list, chunks[1], &mut app.selected_script_state);
 
             // Preview panel
             if let Some(script) = app.get_selected_script() {
@@ -433,7 +444,13 @@ fn run_app_loop(
 
                 // Project navigation
                 KeyCode::Left => app.previous_project(),
-                KeyCode::Right => app.next_project(),
+                KeyCode::Right => {
+                    app.next_project();
+                    // if let Some((_, dirname)) = app.get_selected_project() {
+                    //     println!("Switching to project");
+                    //     return Ok(AppAction::SwitchProject(dirname.to_str().unwrap().to_string()));
+                    // }
+                }
 
                 // Script selection
                 KeyCode::Enter => {
@@ -443,16 +460,13 @@ fn run_app_loop(
                 }
 
                 // Project switching
-                KeyCode::Char('\t') => {
-                    if let Some((name, _)) = app.get_selected_project() {
-                        if !app.is_current_dir_project(name) {
-                            return Ok(AppAction::SwitchProject(format!(
-                                "__SWITCH_PROJECT__{}",
-                                name
-                            )));
-                        }
-                    }
-                }
+                // KeyCode::Char('\t') => {
+                //     if let Some((name, dirname)) = app.get_selected_project() {
+                //         if !app.is_current_dir_project(name) {
+                //             return Ok(AppAction::SwitchProject(dirname.to_str().unwrap().to_string()));
+                //         }
+                //     }
+                // }
 
                 // Search and quit
                 KeyCode::Char('/') => {

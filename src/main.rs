@@ -1,7 +1,9 @@
 mod config;
 mod package_managers;
+mod project;
 mod script_type;
 mod tui;
+mod  execution;
 
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -12,28 +14,15 @@ use crossterm::{
 use std::{
     collections::HashMap,
     io::Write,
-    path::{Path, PathBuf},
+    path::PathBuf,
     str::FromStr,
 };
 
 use crate::config::{Settings, Theme};
-use crate::package_managers::{detect_package_manager_in_dir, PackageManager};
+use crate::package_managers::PackageManager;
+use crate::project::{detect_project, Project};
 use crate::script_type::{find_synonym_script, Script, SPECIAL_SCRIPTS};
-use crate::tui::App;
-
-fn search_upwards_for_package_manager(dir: &Path) -> Option<(Box<dyn PackageManager>, PathBuf)> {
-    let mut current_dir = dir;
-    let home_dir = dirs::home_dir()?;
-
-    while current_dir >= home_dir.as_path() {
-        if let Some(pm) = detect_package_manager_in_dir(current_dir) {
-            return Some((pm, current_dir.to_path_buf()));
-        }
-        current_dir = current_dir.parent()?;
-    }
-
-    None
-}
+use crate::execution::{run_script, run_script_with_env};
 
 impl FromStr for Theme {
     type Err = String;
@@ -293,8 +282,7 @@ fn handle_direct_script_execution(
 
 fn run_interactive_mode(
     cli: &Cli,
-    scripts: Vec<Script>,
-    package_manager: &Box<dyn PackageManager>,
+    project: &Project,
 ) -> Result<()> {
     let mut mode = if cli.tui { Mode::TUI } else { Mode::CLI };
     let settings = Settings::new()?;
@@ -302,10 +290,11 @@ fn run_interactive_mode(
     loop {
         match mode {
             Mode::TUI => {
-                run_tui_mode(cli, &scripts, package_manager, &settings)?;
+                run_tui_mode(cli, &project, &settings)?;
                 break;
             }
             Mode::CLI => {
+                let scripts = project.scripts()?;
                 if let Ok(Some(script)) = run_cli_mode(
                     &scripts,
                     cli.get_effective_theme(&Settings::new().expect("Failed to load config")),
@@ -314,7 +303,7 @@ fn run_interactive_mode(
                         mode = Mode::TUI;
                         continue;
                     }
-                    let exit_code = run_script(&package_manager, &script, &[])?;
+                    let exit_code = run_script(&project.package_manager, &script, &[])?;
                     std::process::exit(exit_code);
                 }
                 break;
@@ -325,38 +314,11 @@ fn run_interactive_mode(
 }
 
 fn run_tui_mode(
-    cli: &Cli,
-    scripts: &Vec<Script>,
-    _package_manager: &Box<dyn PackageManager>,
+    _cli: &Cli,
+    project: &Project,
     settings: &Settings,
 ) -> Result<()> {
-    let current_dir = std::env::current_dir()?;
-    let mut current_scripts = scripts.clone();
-
-    loop {
-        let app = App::new(
-            current_scripts.clone(),
-            cli.get_effective_theme(settings),
-            settings.projects.clone(),
-            &current_dir,
-        );
-
-        let should_quit = tui::run_app(app)?;
-
-        // Check if we should reload (happens after project switch)
-        if !std::env::current_dir()?.eq(&current_dir) {
-            // Reload package manager and scripts from new directory
-            let new_dir = std::env::current_dir()?;
-            let (new_pm, project_dir) = search_upwards_for_package_manager(&new_dir)
-                .context("Could not detect package manager")?;
-            current_scripts = new_pm.parse_scripts(&project_dir)?;
-        }
-        if should_quit {
-            break;
-        }
-    }
-
-    Ok(())
+    tui::run_app(project, settings)
 }
 
 fn main() -> Result<()> {
@@ -405,11 +367,11 @@ fn main() -> Result<()> {
 
     // Detect package manager
     let current_dir = std::env::current_dir()?;
-    let (package_manager, project_dir) = search_upwards_for_package_manager(&current_dir)
+    let project = detect_project(&current_dir)
         .context("Could not detect package manager")?;
 
     // Find scripts
-    let scripts = package_manager.parse_scripts(&project_dir)?;
+    let scripts = project.scripts()?;
 
     if scripts.is_empty() {
         println!("No scripts found");
@@ -424,38 +386,10 @@ fn main() -> Result<()> {
 
     // Handle direct script execution
     if cli.script_command.is_some() {
-        let exit_code = handle_direct_script_execution(&cli, &scripts, &package_manager)?;
+        let exit_code = handle_direct_script_execution(&cli, &scripts, &project.package_manager)?;
         std::process::exit(exit_code);
     }
 
     // Run interactive mode (TUI or CLI)
-    run_interactive_mode(&cli, scripts, &package_manager)
-}
-
-fn run_script(
-    package_manager: &Box<dyn PackageManager>,
-    script: &str,
-    args: &[String],
-) -> Result<i32> {
-    let mut command = package_manager.run_command(script);
-    command.args(args);
-
-    let status = command.status().context("Failed to run script")?;
-
-    Ok(status.code().unwrap_or(-1))
-}
-
-fn run_script_with_env(
-    package_manager: &Box<dyn PackageManager>,
-    script: &str,
-    args: &[String],
-    env_vars: &HashMap<String, String>,
-) -> Result<i32> {
-    let mut command = package_manager.run_command(script);
-    command.args(args);
-    command.envs(env_vars);
-
-    let status = command.status().context("Failed to run script")?;
-
-    Ok(status.code().unwrap_or(-1))
+    run_interactive_mode(&cli, &project)
 }
