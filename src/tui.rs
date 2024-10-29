@@ -55,8 +55,6 @@ pub struct App<'a> {
     projects: &'a Vec<&'a Project>,
     theme: Theme,
     scripts: Vec<Script>,
-    search_mode: bool,
-    search_query: String,
     visible_script_indices: Vec<usize>,
     selected_project_state: ListState,
     selected_script_state: ListState,
@@ -76,8 +74,6 @@ impl<'a> App<'a> {
             projects: &projects,
             theme,
             scripts,
-            search_mode: false,
-            search_query: String::new(),
             selected_script_state: ListState::default(),
             visible_script_indices: filtered_indices,
             selected_project_state: ListState::default(),
@@ -100,27 +96,12 @@ impl<'a> App<'a> {
 
     fn previous(&mut self) {
         let i = match self.selected_script_state.selected() {
-            Some(i) => (i + self.visible_script_indices.len() - 1) % self.visible_script_indices.len(),
+            Some(i) => {
+                (i + self.visible_script_indices.len() - 1) % self.visible_script_indices.len()
+            }
             None => 0,
         };
         self.selected_script_state.select(Some(i));
-    }
-
-    #[allow(dead_code)]
-    fn update_search(&mut self) {
-        self.visible_script_indices = self
-            .scripts
-            .iter()
-            .enumerate()
-            .filter(|(_, script)| script.matches_search(&self.search_query))
-            .map(|(i, _)| i)
-            .collect();
-
-        if !self.visible_script_indices.is_empty() {
-            self.selected_script_state.select(Some(0));
-        } else {
-            self.selected_script_state.select(None);
-        }
     }
 
     fn get_selected_script(&self) -> Option<&Script> {
@@ -156,7 +137,11 @@ impl<'a> App<'a> {
 
     fn set_project_by_index(&mut self, i: usize) {
         self.project = &self.projects[i];
-        self.scripts = self.project.scripts().context("error getting scripts").unwrap();
+        self.scripts = self
+            .project
+            .scripts()
+            .context("error getting scripts")
+            .unwrap();
         self.visible_script_indices = (0..self.scripts.len()).collect();
         self.selected_project_state.select(Some(i));
         self.selected_script_state.select(Some(0));
@@ -164,10 +149,18 @@ impl<'a> App<'a> {
 
     #[allow(dead_code)]
     fn set_project(&'a mut self, project: &'a Project) {
-        let i = self.projects.iter().position(|p| p.path == project.path).unwrap();
+        let i = self
+            .projects
+            .iter()
+            .position(|p| p.path == project.path)
+            .unwrap();
         self.selected_project_state.select(Some(i));
         self.project = project;
-        self.scripts = self.project.scripts().context("error getting scripts").unwrap();
+        self.scripts = self
+            .project
+            .scripts()
+            .context("error getting scripts")
+            .unwrap();
         self.visible_script_indices = (0..self.scripts.len()).collect();
     }
 
@@ -339,24 +332,6 @@ fn run_app_loop(
                 f.render_stateful_widget(projects_list, chunks[0], &mut app.selected_project_state);
             }
 
-            // Search bar
-            let search_text = if app.search_mode {
-                format!("Search: {}", app.search_query)
-            } else {
-                "Press '/' to search".to_string()
-            };
-
-            let search_style = if app.search_mode {
-                Style::default().add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().add_modifier(Modifier::DIM)
-            };
-
-            f.render_widget(
-                Paragraph::new(search_text).style(search_style),
-                Rect::new(chunks[1].x, chunks[1].y, chunks[1].width, 1),
-            );
-
             // Scripts list
             let items: Vec<ListItem> = app
                 .visible_script_indices
@@ -423,8 +398,6 @@ fn run_app_loop(
                     Style::default().add_modifier(Modifier::BOLD),
                 ),
                 Span::raw("↑/↓ Scripts, ←/→ Projects, "),
-                Span::styled("Search: ", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw("/, "),
                 Span::styled("Select: ", Style::default().add_modifier(Modifier::BOLD)),
                 Span::raw("Enter, "),
                 Span::styled("Quit: ", Style::default().add_modifier(Modifier::BOLD)),
@@ -444,13 +417,7 @@ fn run_app_loop(
 
                 // Project navigation
                 KeyCode::Left => app.previous_project(),
-                KeyCode::Right => {
-                    app.next_project();
-                    // if let Some((_, dirname)) = app.get_selected_project() {
-                    //     println!("Switching to project");
-                    //     return Ok(AppAction::SwitchProject(dirname.to_str().unwrap().to_string()));
-                    // }
-                }
+                KeyCode::Right => app.next_project(),
 
                 // Script selection
                 KeyCode::Enter => {
@@ -459,28 +426,20 @@ fn run_app_loop(
                     }
                 }
 
-                // Project switching
-                // KeyCode::Char('\t') => {
-                //     if let Some((name, dirname)) = app.get_selected_project() {
-                //         if !app.is_current_dir_project(name) {
-                //             return Ok(AppAction::SwitchProject(dirname.to_str().unwrap().to_string()));
-                //         }
-                //     }
-                // }
-
-                // Search and quit
-                KeyCode::Char('/') => {
-                    app.search_mode = true;
-                    app.search_query.clear();
-                }
                 KeyCode::Char('q') | KeyCode::Esc => return Ok(AppAction::Quit),
 
-                // Shortcut keys
+                // Script shortcut keys
                 KeyCode::Char(c) => {
+                    if key.code == KeyCode::Char('c')
+                        && key.modifiers.contains(event::KeyModifiers::CONTROL)
+                    {
+                        return Ok(AppAction::Quit);
+                    }
                     if let Some(script) = app.scripts.iter().find(|s| s.shortcut == Some(c)) {
                         return Ok(AppAction::RunScript(script.name.clone()));
                     }
                 }
+
                 _ => {}
             }
         }

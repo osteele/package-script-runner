@@ -7,6 +7,7 @@ pub struct Script {
     pub script_type: ScriptType,
 }
 
+#[allow(dead_code)]
 impl Script {
     pub fn matches_search(&self, query: &str) -> bool {
         let query = query.to_lowercase();
