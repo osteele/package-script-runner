@@ -321,6 +321,10 @@ struct Cli {
     #[arg(short, long)]
     dir: Option<PathBuf>,
 
+    /// Use a saved project by name
+    #[arg(short = 'p', long = "project")]
+    project: Option<String>,
+
     /// Show verbose output
     #[arg(short, long)]
     verbose: bool,
@@ -338,7 +342,7 @@ struct Cli {
     r#loop: bool,
 
     /// Command to execute (run, dev, test, etc)
-    command: Option<String>,
+    script_command: Option<String>,
 
     /// Script name (when using 'run' command)
     script: Option<String>,
@@ -350,6 +354,44 @@ struct Cli {
     /// Use TUI mode instead of command-line interface
     #[arg(long)]
     tui: bool,
+
+    /// Subcommands for project management etc
+    #[command(subcommand)]
+    subcommand: Option<Commands>,
+}
+
+#[derive(Parser)]
+enum Commands {
+    /// Manage saved projects
+    Projects {
+        #[command(subcommand)]
+        action: ProjectsAction,
+    },
+}
+
+#[derive(Parser)]
+enum ProjectsAction {
+    /// Add a new project
+    Add {
+        /// Name of the project
+        name: String,
+        /// Path to the project directory
+        path: PathBuf,
+    },
+    /// Remove a project
+    Remove {
+        /// Name of the project to remove
+        name: String,
+    },
+    /// Rename a project
+    Rename {
+        /// Current name of the project
+        old_name: String,
+        /// New name for the project
+        new_name: String,
+    },
+    /// List all saved projects
+    List,
 }
 
 impl Cli {
@@ -457,7 +499,7 @@ fn handle_direct_script_execution(
     scripts: &[Script],
     package_manager: &Box<dyn PackageManager>,
 ) -> Result<i32> {
-    let command = cli.command.as_ref().unwrap();
+    let command = cli.script_command.as_ref().unwrap();
     let script_to_run = match command.as_str() {
         cmd if SPECIAL_SCRIPTS.contains(&cmd) => {
             if cli.script.is_some() {
@@ -569,11 +611,45 @@ fn run_tui_mode(
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    let mut settings = Settings::new()?;
 
-    // Change directory if specified
-    if let Some(dir) = &cli.dir {
-        std::env::set_current_dir(dir)?;
+    // Handle projects subcommand
+    if let Some(Commands::Projects { action }) = &cli.subcommand {
+        match action {
+            ProjectsAction::Add { name, path } => {
+                settings.add_project(name.clone(), path.clone())?;
+                println!("Added project '{}' at '{}'", name, path.display());
+            }
+            ProjectsAction::Remove { name } => {
+                settings.remove_project(name)?;
+                println!("Removed project '{}'", name);
+            }
+            ProjectsAction::Rename { old_name, new_name } => {
+                settings.rename_project(&old_name, new_name.clone())?;
+                println!("Renamed project '{}' to '{}'", old_name, new_name);
+            }
+            ProjectsAction::List => {
+                println!("Saved projects:");
+                for (name, path) in &settings.projects {
+                    println!("  {} -> {}", name, path.display());
+                }
+            }
+        }
+        return Ok(());
     }
+
+    // Determine working directory
+    let working_dir = if let Some(project) = &cli.project {
+        settings
+            .get_project_path(project)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("Project '{}' not found", project))?
+    } else {
+        cli.dir.clone().unwrap_or_else(|| std::env::current_dir().unwrap())
+    };
+
+    // Change to working directory
+    std::env::set_current_dir(&working_dir)?;
 
     // Detect package manager
     let current_dir = std::env::current_dir()?;
@@ -595,7 +671,7 @@ fn main() -> Result<()> {
     }
 
     // Handle direct script execution
-    if cli.command.is_some() {
+    if cli.script_command.is_some() {
         let exit_code = handle_direct_script_execution(&cli, &scripts, &package_manager)?;
         std::process::exit(exit_code);
     }

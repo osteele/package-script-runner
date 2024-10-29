@@ -254,6 +254,41 @@ Show version:
 psr --version
 ```
 
+### Project Management
+
+PSR supports saving and managing project directories for quick access:
+
+```bash
+# Add a project
+psr projects add myproject /path/to/project
+```
+
+```bash
+# List saved projects
+psr projects list
+```
+
+```bash
+# Remove a project
+psr projects remove myproject
+```
+
+```bash
+# Run PSR in a saved project directory
+psr -p myproject
+psr -p myproject run build
+```
+
+Projects are stored in your config file (`.pkr.toml`). Example configuration:
+
+```toml
+theme = "dark"
+[projects]
+myproject = "/path/to/project"
+webapp = "/home/user/code/webapp"
+api = "/home/user/code/api"
+```
+
 ## Project Type Detection
 
 Package Script Runner automatically detects your project type through:

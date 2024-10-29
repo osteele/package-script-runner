@@ -1,15 +1,19 @@
 use config::{Config, ConfigError, File};
 use serde::Deserialize;
+use serde::Serialize;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::collections::HashMap;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Settings {
     #[serde(default)]
     pub theme: Theme,
+    #[serde(default)]
+    pub projects: HashMap<String, PathBuf>,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Theme {
     Dark,
@@ -22,19 +26,6 @@ impl Default for Theme {
         Theme::Dark
     }
 }
-
-// impl FromStr for Theme {
-//     type Err = String;
-
-//     fn from_str(s: &str) -> Result<Self, Self::Err> {
-//         match s.to_lowercase().as_str() {
-//             "dark" => Ok(Theme::Dark),
-//             "light" => Ok(Theme::Light),
-//             "nocolor" => Ok(Theme::NoColor),
-//             _ => Err(format!("Invalid theme: {}", s)),
-//         }
-//     }
-// }
 
 impl Settings {
     pub fn new() -> Result<Self, ConfigError> {
@@ -89,5 +80,51 @@ impl Settings {
         }
 
         self.theme
+    }
+
+    pub fn add_project(&mut self, name: String, path: PathBuf) -> Result<(), ConfigError> {
+        if self.projects.contains_key(&name) {
+            return Err(ConfigError::Message(format!("Project '{}' already exists", name)));
+        }
+        self.projects.insert(name, path);
+        self.save()
+    }
+
+    pub fn rename_project(&mut self, old_name: &str, new_name: String) -> Result<(), ConfigError> {
+        if !self.projects.contains_key(old_name) {
+            return Err(ConfigError::Message(format!("Project '{}' not found", old_name)));
+        }
+        if self.projects.contains_key(&new_name) {
+            return Err(ConfigError::Message(format!("Project '{}' already exists", new_name)));
+        }
+
+        if let Some(path) = self.projects.remove(old_name) {
+            self.projects.insert(new_name.clone(), path);
+            self.save()?;
+            Ok(())
+        } else {
+            Err(ConfigError::Message(format!("Failed to rename project '{}'", old_name)))
+        }
+    }
+
+    pub fn remove_project(&mut self, name: &str) -> Result<(), ConfigError> {
+        if !self.projects.contains_key(name) {
+            return Err(ConfigError::Message(format!("Project '{}' not found", name)));
+        }
+        self.projects.remove(name);
+        self.save()
+    }
+
+    pub fn get_project_path(&self, name: &str) -> Option<&PathBuf> {
+        self.projects.get(name)
+    }
+
+    fn save(&self) -> Result<(), ConfigError> {
+        let config_path = Self::get_config_path();
+        let toml = toml::to_string(&self)
+            .map_err(|e| ConfigError::Message(format!("Failed to serialize config: {}", e)))?;
+        std::fs::write(&config_path, toml)
+            .map_err(|e| ConfigError::Message(format!("Failed to write config: {}", e)))?;
+        Ok(())
     }
 }
