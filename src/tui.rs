@@ -58,6 +58,7 @@ pub struct App<'a> {
     visible_script_indices: Vec<usize>,
     selected_project_state: ListState,
     selected_script_state: ListState,
+    show_emoji: bool,
 }
 
 impl<'a> App<'a> {
@@ -65,18 +66,20 @@ impl<'a> App<'a> {
         project: &'a Project,
         projects: &'a Vec<&'a Project>,
         theme: Theme,
+        settings: &Settings,
     ) -> anyhow::Result<Self> {
         let scripts = project.scripts()?;
         let filtered_indices: Vec<usize> = (0..scripts.len()).collect();
 
         let mut app = Self {
             project,
-            projects: &projects,
+            projects,
             theme,
             scripts,
             selected_script_state: ListState::default(),
             visible_script_indices: filtered_indices,
             selected_project_state: ListState::default(),
+            show_emoji: settings.show_emoji,
         };
 
         app.selected_script_state.select(Some(0));
@@ -170,11 +173,19 @@ impl<'a> App<'a> {
     }
 }
 
-fn render_script_preview(script: &Script, theme: Theme) -> Vec<Line> {
+fn render_script_preview(script: &Script, theme: Theme, show_emoji: bool) -> Vec<Line> {
     vec![
         Line::from(vec![
             Span::styled("Name: ", Style::default().add_modifier(Modifier::BOLD)),
-            Span::raw(&script.name),
+            Span::raw(format!(
+                "{} {}",
+                if show_emoji {
+                    script.script_type.emoji().unwrap_or("")
+                } else {
+                    ""
+                },
+                script.name
+            )),
         ]),
         Line::from(vec![
             Span::styled("Type: ", Style::default().add_modifier(Modifier::BOLD)),
@@ -208,16 +219,14 @@ pub enum AppAction {
 }
 
 pub fn run_app(project: &Project, settings: &Settings) -> Result<()> {
-    // filter out projects where create_project returns None
     let project_owners = &settings
         .projects
         .iter()
         .filter_map(|(name, path)| create_project(name, path))
         .collect::<Vec<Project>>();
-    // make a vec of references to the project owners
     let mut project_owners_refs = project_owners.iter().map(|p| p).collect::<Vec<&Project>>();
 
-    // add project to the beginning of the list if it's not in the list
+    // add project to the beginning of the list if it's not already in the list
     if !project_owners_refs
         .iter()
         .any(|p| p.path.as_path() == project.path.as_path())
@@ -225,7 +234,7 @@ pub fn run_app(project: &Project, settings: &Settings) -> Result<()> {
         project_owners_refs.insert(0, project);
     }
 
-    let mut app = App::new(project, &project_owners_refs, settings.theme)?;
+    let mut app = App::new(project, &project_owners_refs, settings.theme, settings)?;
 
     let mut stdout = stdout();
     enable_raw_mode()?;
@@ -344,6 +353,17 @@ fn run_app_loop(
                         .map(|c| format!("[{}] ", c))
                         .unwrap_or_default();
 
+                    let emoji = if app.show_emoji {
+                        script.script_type.emoji().unwrap_or("")
+                    } else {
+                        ""
+                    };
+                    let name_with_emoji = if !emoji.is_empty() {
+                        format!("{} {}", emoji, script.name)
+                    } else {
+                        script.name.clone()
+                    };
+
                     let content = if i > 0
                         && is_priority
                             != SPECIAL_SCRIPTS.contains(&app.scripts[i - 1].name.as_str())
@@ -352,7 +372,7 @@ fn run_app_loop(
                             Line::from("───────────────────"),
                             Line::from(vec![
                                 Span::styled(
-                                    format!("{}{}", shortcut, script.name),
+                                    format!("{}{}", shortcut, name_with_emoji),
                                     Style::default()
                                         .fg(script.script_type.color(app.theme))
                                         .add_modifier(Modifier::BOLD),
@@ -364,7 +384,7 @@ fn run_app_loop(
                     } else {
                         vec![Line::from(vec![
                             Span::styled(
-                                format!("{}{}", shortcut, script.name),
+                                format!("{}{}", shortcut, name_with_emoji),
                                 Style::default()
                                     .fg(script.script_type.color(app.theme))
                                     .add_modifier(Modifier::BOLD),
@@ -385,7 +405,7 @@ fn run_app_loop(
 
             // Preview panel
             if let Some(script) = app.get_selected_script() {
-                let preview = Paragraph::new(render_script_preview(script, app.theme))
+                let preview = Paragraph::new(render_script_preview(script, app.theme, app.show_emoji))
                     .block(Block::default().title("Details").borders(Borders::ALL))
                     .wrap(Wrap { trim: true });
                 f.render_widget(preview, chunks[2]);

@@ -11,6 +11,8 @@ pub struct Settings {
     pub theme: Theme,
     #[serde(default)]
     pub projects: HashMap<String, PathBuf>,
+    #[serde(default = "default_show_emoji")]
+    pub show_emoji: bool,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
@@ -127,4 +129,8 @@ impl Settings {
             .map_err(|e| ConfigError::Message(format!("Failed to write config: {}", e)))?;
         Ok(())
     }
+}
+
+fn default_show_emoji() -> bool {
+    true
 }

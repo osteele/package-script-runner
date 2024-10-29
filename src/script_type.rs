@@ -59,6 +59,19 @@ impl ScriptType {
             Self::Other
         }
     }
+
+    pub fn emoji(&self) -> Option<&'static str> {
+        match self {
+            ScriptType::Build => Some("🔨"),
+            ScriptType::Development => Some("🚀"),
+            ScriptType::Test => Some("🧪"),
+            ScriptType::Deployment => Some("📦"),
+            ScriptType::Format => Some("✨"),
+            ScriptType::Lint => Some("🔍"),
+            ScriptType::Clean => Some("🧹"),
+            ScriptType::Other => None,
+        }
+    }
 }
 
 pub const SPECIAL_SCRIPTS: &[&str] = &[

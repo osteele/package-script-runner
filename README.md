@@ -311,10 +311,19 @@ PSR looks for a configuration file in the following locations (in order):
 The configuration file uses TOML format. Currently supported options:
 
 - `theme`: Set the color theme (dark or light)
+- `show_emoji`: Set to `false` to disable emoji icons (defaults to `true` if not specified)
 
 ```toml
 # Theme can be "dark", "light", or "nocolor"
-theme = "dark" # Optional, defaults to "dark"
+theme = "dark"
+
+# Show emoji icons for script types (optional, defaults to true)
+show_emoji = true
+
+[projects]
+myproject = "/path/to/project"
+webapp = "/home/user/code/webapp"
+api = "/home/user/code/api"
 ```
 
 Configuration priority (highest to lowest):
@@ -345,6 +354,24 @@ psr
 ```
 
 This will run PSR without any color output, regardless of the theme setting.
+
+### Emoji
+
+PSR displays emoji icons for different script types by default. You can disable this in your config file:
+
+```toml
+# Disable emoji icons (defaults to true if not specified)
+show_emoji = false
+```
+
+When enabled (default), PSR displays the following icons:
+- 🔨 Build scripts
+- 🚀 Development scripts
+- 🧪 Test scripts
+- 📦 Deployment scripts
+- ✨ Format scripts
+- 🔍 Lint scripts
+- 🧹 Clean scripts
 
 ## Contributing
 
