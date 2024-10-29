@@ -78,7 +78,7 @@ This should display the version number of PSR.
 Navigate to any directory containing a `package.json`, `pyproject.toml`, `requirements.txt`, or `Cargo.toml` (or parent directory) and run:
 
 ```bash
-psr [SCRIPT_NAME] [-- SCRIPT_ARGS...]
+psr [COMMAND] [SCRIPT_NAME] [-- SCRIPT_ARGS...]
 ```
 
 By default, PSR runs in a simple CLI mode that shows available scripts and their shortcuts. Press the corresponding key to run a script, 't' to switch to TUI mode, or 'q' to quit.
@@ -88,9 +88,10 @@ If a script name is provided as a positional argument, PSR will run that script 
 ### Command Line Options
 
 ```text
-Usage: psr [OPTIONS] [SCRIPT_NAME] [-- SCRIPT_ARGS...]
+Usage: psr [OPTIONS] [COMMAND] [SCRIPT_NAME] [-- SCRIPT_ARGS...]
 
 Arguments:
+  [COMMAND]         Command to execute (run, dev, test, etc)
   [SCRIPT_NAME]     Name of the script to run directly
   [SCRIPT_ARGS]...  Additional arguments to pass to the script
 
@@ -121,6 +122,21 @@ PSR offers two interface modes:
    - Rich preview and navigation
    - Advanced search capabilities
    - More extensive script list
+
+### Special Commands
+
+The following commands can be run directly without using `run`:
+- `dev`
+- `start`
+- `run`
+- `build`
+- `deploy`
+- `clean`
+- `watch`
+- `test`
+- `format`
+- `lint`
+- `typecheck`
 
 ### Environment Variables
 
@@ -163,25 +179,38 @@ PSR supports some common script name alternatives:
 - `typecheck` and `tc`: These are treated as synonyms. If one doesn't exist but the other does, PSR will run the existing script.
 
 ## Examples
-Select and run a script in the current directory:
+Launch the script selector:
 ```bash
 psr
 ```
 
-Run a script directly:
+Run a special commands directly:
 ```bash
 psr test
+psr dev
+psr build
 ```
 
-Run a script with additional arguments:
+Run arbitrary scripts using `run`:
+```bash
+psr run custom-task
+```
+
+Run scripts with additional arguments:
 ```bash
 psr test -- --watch
+psr run custom-task -- --flag value
 ```
 
 Use a script synonym:
 ```bash
 psr dev  # Runs 'start' or 'run' if 'dev' doesn't exist, with NODE_ENV=dev
 psr typecheck  # Runs 'tc' if 'typecheck' doesn't exist
+```
+
+Run the default 'run' script:
+```bash
+psr run # Tries to find a script named 'run', 'dev', or their synonyms
 ```
 
 List scripts:

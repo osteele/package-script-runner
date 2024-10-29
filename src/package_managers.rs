@@ -196,6 +196,20 @@ impl PackageManager for RustPackageManager {
                 shortcut: Some('c'),
                 script_type: ScriptType::Other,
             },
+            Script {
+                name: "lint".to_string(),
+                command: "cargo clippy".to_string(),
+                description: Some("Run the Rust linter (clippy)".to_string()),
+                shortcut: Some('l'),
+                script_type: ScriptType::Lint,
+            },
+            Script {
+                name: "fix".to_string(),
+                command: "cargo clippy --fix".to_string(),
+                description: Some("Automatically fix linting issues".to_string()),
+                shortcut: None,
+                script_type: ScriptType::Lint,
+            },
         ]);
 
         // Parse custom scripts from [package.metadata.scripts]
@@ -321,8 +335,39 @@ impl PythonPackageManager {
     fn parse_pip_scripts(&self, path: &Path) -> Result<Vec<Script>> {
         let requirements_path = path.join("requirements.txt");
         let content = fs::read_to_string(requirements_path)?;
-
         let mut scripts = Vec::new();
+
+        // Check for linting tools in requirements.txt
+        let has_ruff = content.lines().any(|l| l.starts_with("ruff"));
+        let has_flake8 = content.lines().any(|l| l.starts_with("flake8"));
+        let has_pylint = content.lines().any(|l| l.starts_with("pylint"));
+
+        if has_ruff {
+            scripts.push(Script {
+                name: "lint".to_string(),
+                command: "ruff check .".to_string(),
+                description: Some("Run Ruff linter".to_string()),
+                shortcut: Some('l'),
+                script_type: ScriptType::Lint,
+            });
+        } else if has_flake8 {
+            scripts.push(Script {
+                name: "lint".to_string(),
+                command: "flake8".to_string(),
+                description: Some("Run Flake8 linter".to_string()),
+                shortcut: Some('l'),
+                script_type: ScriptType::Lint,
+            });
+        } else if has_pylint {
+            scripts.push(Script {
+                name: "lint".to_string(),
+                command: "pylint **/*.py".to_string(),
+                description: Some("Run Pylint linter".to_string()),
+                shortcut: Some('l'),
+                script_type: ScriptType::Lint,
+            });
+        }
+
         for line in content.lines() {
             if let Some(package) = line.split_whitespace().next() {
                 scripts.push(Script {
@@ -344,6 +389,43 @@ impl PythonPackageManager {
         let pyproject: toml::Value = toml::from_str(&content)?;
 
         let mut scripts = Vec::new();
+
+        // Add common Python linting commands if the tools are in dependencies
+        if let Some(tool) = pyproject.get("tool") {
+            if let Some(poetry) = tool.get("poetry") {
+                if let Some(deps) = poetry.get("dependencies").or_else(|| poetry.get("dev-dependencies")) {
+                    let has_ruff = deps.as_table().map_or(false, |t| t.contains_key("ruff"));
+                    let has_flake8 = deps.as_table().map_or(false, |t| t.contains_key("flake8"));
+                    let has_pylint = deps.as_table().map_or(false, |t| t.contains_key("pylint"));
+
+                    if has_ruff {
+                        scripts.push(Script {
+                            name: "lint".to_string(),
+                            command: "poetry run ruff check .".to_string(),
+                            description: Some("Run Ruff linter".to_string()),
+                            shortcut: Some('l'),
+                            script_type: ScriptType::Lint,
+                        });
+                    } else if has_flake8 {
+                        scripts.push(Script {
+                            name: "lint".to_string(),
+                            command: "poetry run flake8".to_string(),
+                            description: Some("Run Flake8 linter".to_string()),
+                            shortcut: Some('l'),
+                            script_type: ScriptType::Lint,
+                        });
+                    } else if has_pylint {
+                        scripts.push(Script {
+                            name: "lint".to_string(),
+                            command: "poetry run pylint **/*.py".to_string(),
+                            description: Some("Run Pylint linter".to_string()),
+                            shortcut: Some('l'),
+                            script_type: ScriptType::Lint,
+                        });
+                    }
+                }
+            }
+        }
 
         if let Some(tool) = pyproject.get("tool") {
             if let Some(poetry) = tool.get("poetry") {
@@ -393,26 +475,41 @@ impl PythonPackageManager {
         let uv_toml_path = path.join("uv.toml");
         let content = fs::read_to_string(uv_toml_path)?;
         let uv_config: toml::Value = toml::from_str(&content)?;
-
         let mut scripts = Vec::new();
 
         if let Some(dependencies) = uv_config.get("dependencies") {
-            for (name, value) in dependencies.as_table().unwrap() {
-                let command = if value.is_str() {
-                    format!("uv pip install {}", name)
-                } else {
-                    format!(
-                        "uv pip install {}=={}",
-                        name,
-                        value.as_str().unwrap_or("latest")
-                    )
-                };
+            // Create a new empty map that lives long enough
+            let empty_map = toml::map::Map::new();
+            // Use a reference to either the dependencies table or the empty map
+            let deps = dependencies.as_table().unwrap_or(&empty_map);
+
+            let has_ruff = deps.contains_key("ruff");
+            let has_flake8 = deps.contains_key("flake8");
+            let has_pylint = deps.contains_key("pylint");
+
+            if has_ruff {
                 scripts.push(Script {
-                    name: name.to_string(),
-                    command,
-                    description: None,
-                    shortcut: None,
-                    script_type: ScriptType::Other,
+                    name: "lint".to_string(),
+                    command: "uv run ruff check .".to_string(),
+                    description: Some("Run Ruff linter".to_string()),
+                    shortcut: Some('l'),
+                    script_type: ScriptType::Lint,
+                });
+            } else if has_flake8 {
+                scripts.push(Script {
+                    name: "lint".to_string(),
+                    command: "uv run flake8".to_string(),
+                    description: Some("Run Flake8 linter".to_string()),
+                    shortcut: Some('l'),
+                    script_type: ScriptType::Lint,
+                });
+            } else if has_pylint {
+                scripts.push(Script {
+                    name: "lint".to_string(),
+                    command: "uv run pylint **/*.py".to_string(),
+                    description: Some("Run Pylint linter".to_string()),
+                    shortcut: Some('l'),
+                    script_type: ScriptType::Lint,
                 });
             }
         }

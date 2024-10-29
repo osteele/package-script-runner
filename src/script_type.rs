@@ -19,13 +19,14 @@ impl Script {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Copy, Clone, Debug)]
 pub enum ScriptType {
     Build,
     Development,
     Test,
     Deployment,
     Format,
+    Lint,
     Clean,
     Other,
 }
@@ -41,8 +42,16 @@ impl ScriptType {
             Self::Test
         } else if text.contains("deploy") || text.contains("publish") {
             Self::Deployment
-        } else if text.contains("format") || text.contains("lint") || text.contains("prettier") {
+        } else if text.contains("format") || text.contains("prettier") {
             Self::Format
+        } else if text.contains("lint")
+            || text.contains("eslint")
+            || text.contains("stylelint")
+            || text.contains("clippy")
+            || text.contains("flake8")
+            || text.contains("pylint")
+            || text.contains("ruff") {
+            Self::Lint
         } else if text.contains("clean") || text.contains("clear") {
             Self::Clean
         } else {
@@ -61,5 +70,6 @@ pub const PRIORITY_SCRIPTS: &[&str] = &[
     "watch",
     "test",
     "format",
+    "lint",
     "typecheck",
 ];

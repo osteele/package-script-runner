@@ -286,6 +286,7 @@ impl ScriptType {
                 ScriptType::Test => Color::Rgb(0, 255, 255),
                 ScriptType::Deployment => Color::Rgb(0, 191, 255),
                 ScriptType::Format => Color::Rgb(191, 0, 255),
+                ScriptType::Lint => Color::Rgb(255, 128, 0),
                 ScriptType::Clean => Color::Rgb(192, 192, 192),
                 ScriptType::Other => Color::White,
             },
@@ -295,6 +296,7 @@ impl ScriptType {
                 ScriptType::Test => Color::Rgb(0, 102, 204),
                 ScriptType::Deployment => Color::Rgb(153, 0, 0),
                 ScriptType::Format => Color::Rgb(102, 0, 204),
+                ScriptType::Lint => Color::Rgb(204, 51, 0),
                 ScriptType::Clean => Color::Rgb(64, 64, 64),
                 ScriptType::Other => Color::Black,
             },
@@ -341,7 +343,10 @@ struct Cli {
     #[arg(long)]
     r#loop: bool,
 
-    /// Name of the script to run directly
+    /// Command to execute (run, dev, test, etc)
+    command: Option<String>,
+
+    /// Script name (when using 'run' command)
     script: Option<String>,
 
     /// Additional arguments to pass to the script
@@ -367,6 +372,13 @@ fn find_synonym_script(scripts: &[Script], name: &str) -> Option<String> {
     match name {
         "dev" => scripts.iter().find_map(|s| {
             if s.name == "start" || s.name == "run" {
+                Some(s.name.clone())
+            } else {
+                None
+            }
+        }),
+        "run" => scripts.iter().find_map(|s| {
+            if s.name == "run" || s.name == "dev" {
                 Some(s.name.clone())
             } else {
                 None
@@ -508,23 +520,52 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    // If a script name is provided, run it directly
-    if let Some(script_name) = cli.script {
-        let script_to_run = if let Some(script) = scripts.iter().find(|s| s.name == script_name) {
-            script.name.clone()
-        } else if let Some(synonym) = find_synonym_script(&scripts, &script_name) {
-            synonym
-        } else {
-            anyhow::bail!("Script '{}' not found", script_name);
+    // Handle direct script execution
+    if let Some(command) = cli.command {
+        let script_to_run = match command.as_str() {
+            // Special commands that can be run directly
+            cmd if PRIORITY_SCRIPTS.contains(&cmd) => {
+                if cli.script.is_some() {
+                    anyhow::bail!("Cannot specify script name with special command '{}'", command);
+                }
+                if let Some(script) = scripts.iter().find(|s| s.name == command) {
+                    script.name.clone()
+                } else if let Some(synonym) = find_synonym_script(&scripts, &command) {
+                    synonym
+                } else {
+                    anyhow::bail!("Script '{}' not found", command);
+                }
+            }
+            // The 'run' command can either run a specified script or try to find a 'run' script
+            "run" => {
+                if let Some(script_name) = cli.script {
+                    // Run the specified script
+                    if let Some(script) = scripts.iter().find(|s| s.name == script_name) {
+                        script.name.clone()
+                    } else {
+                        anyhow::bail!("Script '{}' not found", script_name);
+                    }
+                } else {
+                    // Try to find a script named 'run' or its synonyms
+                    if let Some(script) = scripts.iter().find(|s| s.name == "run") {
+                        script.name.clone()
+                    } else if let Some(synonym) = find_synonym_script(&scripts, "run") {
+                        synonym
+                    } else {
+                        anyhow::bail!("No script name provided and no 'run' script found");
+                    }
+                }
+            }
+            // Unknown command
+            _ => anyhow::bail!("Unknown command '{}'. Use 'run <script>' for custom scripts", command),
         };
 
         let mut env_vars = std::env::vars().collect::<HashMap<String, String>>();
-        if script_name == "dev" && (script_to_run == "start" || script_to_run == "run") {
+        if command == "dev" && (script_to_run == "start" || script_to_run == "run") {
             env_vars.insert("NODE_ENV".to_string(), "dev".to_string());
         }
 
-        let exit_code =
-            run_script_with_env(&package_manager, &script_to_run, &cli.args, &env_vars)?;
+        let exit_code = run_script_with_env(&package_manager, &script_to_run, &cli.args, &env_vars)?;
         std::process::exit(exit_code);
     }
 
