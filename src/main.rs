@@ -146,14 +146,14 @@ fn run_app(
         terminal.draw(|f| {
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints([Constraint::Min(3), Constraint::Length(5)].as_ref())
+                .constraints([
+                    Constraint::Min(3),      // Scripts list
+                    Constraint::Length(5),    // Details
+                    Constraint::Length(3),    // Help (increased from 2 to 3 for better visibility)
+                ].as_ref())
                 .split(f.size());
 
             // Search bar
-            // let search_block = Block::default()
-            //     .borders(Borders::NONE)
-            //     .style(Style::default());
-
             let search_text = if app.search_mode {
                 format!("Search: {}", app.search_query)
             } else {
@@ -229,6 +229,24 @@ fn run_app(
                     .wrap(Wrap { trim: true });
                 f.render_widget(preview, chunks[1]);
             }
+
+            // Help footer
+            let help_text = vec![
+                Line::from(vec![
+                    Span::styled("Navigation: ", Style::default().add_modifier(Modifier::BOLD)),
+                    Span::raw("↑/k, ↓/j, "),
+                    // Span::styled("Search: ", Style::default().add_modifier(Modifier::BOLD)),
+                    // Span::raw("/, "),
+                    Span::styled("Select: ", Style::default().add_modifier(Modifier::BOLD)),
+                    Span::raw("Enter, "),
+                    Span::styled("Quit: ", Style::default().add_modifier(Modifier::BOLD)),
+                    Span::raw("q/Esc"),
+                ]),
+            ];
+            let help = Paragraph::new(help_text)
+                .block(Block::default().title("Help").borders(Borders::ALL))
+                .alignment(ratatui::layout::Alignment::Center);
+            f.render_widget(help, chunks[2]);
         })?;
 
         if let Event::Key(key) = event::read()? {
@@ -247,10 +265,10 @@ fn run_app(
                     app.update_search();
                 }
                 (false, KeyCode::Char('q')) => return Ok(None),
-                (false, KeyCode::Char('/')) => {
-                    app.search_mode = true;
-                    app.search_query.clear();
-                }
+                // (false, KeyCode::Char('/')) => {
+                //     app.search_mode = true;
+                //     app.search_query.clear();
+                // }
                 (false, KeyCode::Char('j')) | (false, KeyCode::Down) => app.next(),
                 (false, KeyCode::Char('k')) | (false, KeyCode::Up) => app.previous(),
                 (false, KeyCode::Enter) => {
@@ -402,8 +420,8 @@ impl Cli {
 
 // Add this new function
 fn run_cli_mode(scripts: &[Script], _theme: Theme) -> Result<Option<String>> {
+    println!("Working directory: {}", std::env::current_dir()?.display());
     println!("Available scripts (press key to select):");
-    println!("[t] Switch to TUI mode");
 
     let mut numbered_scripts = Vec::new();
 
@@ -445,7 +463,14 @@ fn run_cli_mode(scripts: &[Script], _theme: Theme) -> Result<Option<String>> {
         });
     }
 
-    print!("\nPress a key to select a script, or 'q' to quit> ");
+    // Finally print commands to the CLI itself
+    if !remaining_scripts.is_empty() {
+        println!("---");
+    }
+    // println!("[q] Quit");
+    println!("[t] Switch to TUI mode");
+
+    print!("\nPress a key to select a command, or 'q' to quit> ");
     std::io::stdout().flush()?;
 
     // Read single keypress

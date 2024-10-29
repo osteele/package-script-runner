@@ -6,33 +6,26 @@ A fast TUI-based script selector for Node.js (npm, bun, deno), Python (pip,
 poetry, uv), and Rust projects. Quickly find and run package scripts with
 keyboard shortcuts, search, and smart project type detection.
 
+I wrote this because I had difficulty remembering which projects used which
+package managers (e.g. `npm` vs. `yarn` vs. `bun`), and which projects package
+managers used which conventional names for their scripts (e.g. `dev` vs. `start`
+vs. `run`).
+
+I also wanted to be able to quickly run projects in different directories, for
+full-stack development.
+
 ## Features
 
-- 🚀 **Fast TUI Interface**: Navigate and run scripts quickly using keyboard shortcuts
-- 🔍 **Smart Search**: Fuzzy find scripts by name, command, or description
-- 🎨 **Color Coded**: Scripts are color-coded by type (build, test, dev, etc.)
-- 📦 **Multi-Project Support**:
-  - Node.js:
-    - npm
-    - yarn
-    - pnpm
-    - bun
-    - deno
-  - Python:
-    - pip
-    - poetry
-    - uv
-  - Rust:
-    - Cargo
-- 📁 **Smart Detection**:
-  - Automatically detects the right project type and package manager
-  - Finds `package.json`, `pyproject.toml`, `requirements.txt`, or `Cargo.toml` in parent directories
-  - Stops at home directory
-- ⌨️ **Keyboard Shortcuts**: Quick access to common scripts (`d` for dev, `t`
-  for test, etc.)
-- 📝 **Rich Preview**: See full script details including descriptions
-- 🔄 **Live Filtering**: Results update as you type
-- 🔄 **Script Synonyms**: Support for common script name alternatives
+- 📁 **Project Type Detection**:
+  - Automatically detects the language and package manager, e.g.
+    `npm`, `yarn`, `pnpm`, `bun`, `deno` (NodeJS), `pip`, `poetry`, `uv` (Python), `cargo` (Rust)
+- 📂 **Project Management**: Save and quickly access frequently used project
+  directories
+- 🚀 **CLI and TUI Interfaces**: List the supported scripts and run them quickly
+  using keyboard shortcuts
+- 🔄 **Script Synonyms**: Support for common script name alternatives, e.g.
+  `dev` for `start` or `run` or `tc` for `typecheck`. You don't need to remember
+  which name a particular package manager or project uses.
 
 ## Installation
 
