@@ -49,11 +49,28 @@ struct App {
     search_query: String,
     filtered_indices: Vec<usize>,
     theme: Theme,
+    projects: HashMap<String, PathBuf>,
+    projects_state: ListState,
 }
 
 impl App {
-    fn new(scripts: Vec<Script>, theme: Theme) -> Self {
+    fn new(scripts: Vec<Script>, theme: Theme, projects: HashMap<String, PathBuf>, current_dir: &Path) -> Self {
         let filtered_indices: Vec<usize> = (0..scripts.len()).collect();
+
+        // Create a new HashMap with the current directory as first entry if it's not a saved project
+        let mut ordered_projects = HashMap::new();
+        let is_saved_project = projects.iter().any(|(_, path)| path.as_path() == current_dir);
+
+        if !is_saved_project {
+            ordered_projects.insert(
+                "Current Directory".to_string(),
+                current_dir.to_path_buf()
+            );
+        }
+
+        // Add all saved projects
+        ordered_projects.extend(projects);
+
         let mut app = Self {
             scripts,
             state: ListState::default(),
@@ -61,8 +78,14 @@ impl App {
             search_query: String::new(),
             filtered_indices,
             theme,
+            projects: ordered_projects,
+            projects_state: ListState::default(),
         };
+
         app.state.select(Some(0));
+        if !app.projects.is_empty() {
+            app.projects_state.select(Some(0));
+        }
         app
     }
 
@@ -82,6 +105,7 @@ impl App {
         self.state.select(Some(i));
     }
 
+    #[allow(dead_code)]
     fn update_search(&mut self) {
         self.filtered_indices = self
             .scripts
@@ -103,6 +127,39 @@ impl App {
             .selected()
             .and_then(|i| self.filtered_indices.get(i))
             .map(|&i| &self.scripts[i])
+    }
+
+    fn next_project(&mut self) {
+        let len = self.projects.len();
+        if len == 0 { return; }
+        let i = match self.projects_state.selected() {
+            Some(i) => (i + 1) % len,
+            None => 0,
+        };
+        self.projects_state.select(Some(i));
+    }
+
+    fn previous_project(&mut self) {
+        let len = self.projects.len();
+        if len == 0 { return; }
+        let i = match self.projects_state.selected() {
+            Some(i) => (i + len - 1) % len,
+            None => 0,
+        };
+        self.projects_state.select(Some(i));
+    }
+
+    fn get_selected_project(&self) -> Option<(&String, &PathBuf)> {
+        self.projects_state.selected().and_then(|i| {
+            self.projects
+                .iter()
+                .nth(i)
+        })
+    }
+
+    // Add this helper method
+    fn is_current_dir_project(&self, name: &str) -> bool {
+        name == "Current Directory"
     }
 }
 
@@ -147,11 +204,44 @@ fn run_app(
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Min(3),      // Scripts list
+                    Constraint::Length(3),    // Projects list
+                    Constraint::Min(3),       // Scripts list
                     Constraint::Length(5),    // Details
-                    Constraint::Length(3),    // Help (increased from 2 to 3 for better visibility)
+                    Constraint::Length(3),    // Help
                 ].as_ref())
                 .split(f.size());
+
+            // Projects list (if not empty)
+            if !app.projects.is_empty() {
+                let projects: Vec<ListItem> = app.projects
+                    .iter()
+                    .map(|(name, path)| {
+                        let style = if app.is_current_dir_project(name) {
+                            Style::default()
+                                .add_modifier(Modifier::BOLD)
+                                .add_modifier(Modifier::ITALIC)
+                        } else {
+                            Style::default().add_modifier(Modifier::BOLD)
+                        };
+
+                        ListItem::new(Line::from(vec![
+                            Span::styled(name.clone(), style),
+                            Span::raw(": "),
+                            Span::raw(path.display().to_string()),
+                        ]))
+                    })
+                    .collect();
+
+                let projects_list = List::new(projects)
+                    .block(Block::default().title("Project (←/→ to switch)").borders(Borders::ALL))
+                    .highlight_style(
+                        Style::default()
+                            .bg(Color::DarkGray)
+                            .add_modifier(Modifier::BOLD),
+                    );
+
+                f.render_stateful_widget(projects_list, chunks[0], &mut app.projects_state);
+            }
 
             // Search bar
             let search_text = if app.search_mode {
@@ -168,7 +258,7 @@ fn run_app(
 
             f.render_widget(
                 Paragraph::new(search_text).style(search_style),
-                Rect::new(chunks[0].x, chunks[0].y, chunks[0].width, 1),
+                Rect::new(chunks[1].x, chunks[1].y, chunks[1].width, 1),
             );
 
             // Scripts list
@@ -220,23 +310,23 @@ fn run_app(
                 .block(Block::default().title("Scripts").borders(Borders::ALL))
                 .highlight_style(Style::default().bg(Color::DarkGray));
 
-            f.render_stateful_widget(list, chunks[0], &mut app.state);
+            f.render_stateful_widget(list, chunks[1], &mut app.state);
 
             // Preview panel
             if let Some(script) = app.get_selected_script() {
                 let preview = Paragraph::new(render_script_preview(script, app.theme))
                     .block(Block::default().title("Details").borders(Borders::ALL))
                     .wrap(Wrap { trim: true });
-                f.render_widget(preview, chunks[1]);
+                f.render_widget(preview, chunks[2]);
             }
 
             // Help footer
             let help_text = vec![
                 Line::from(vec![
                     Span::styled("Navigation: ", Style::default().add_modifier(Modifier::BOLD)),
-                    Span::raw("↑/k, ↓/j, "),
-                    // Span::styled("Search: ", Style::default().add_modifier(Modifier::BOLD)),
-                    // Span::raw("/, "),
+                    Span::raw("↑/↓ Scripts, ←/→ Projects, "),
+                    Span::styled("Search: ", Style::default().add_modifier(Modifier::BOLD)),
+                    Span::raw("/, "),
                     Span::styled("Select: ", Style::default().add_modifier(Modifier::BOLD)),
                     Span::raw("Enter, "),
                     Span::styled("Quit: ", Style::default().add_modifier(Modifier::BOLD)),
@@ -246,42 +336,48 @@ fn run_app(
             let help = Paragraph::new(help_text)
                 .block(Block::default().title("Help").borders(Borders::ALL))
                 .alignment(ratatui::layout::Alignment::Center);
-            f.render_widget(help, chunks[2]);
+            f.render_widget(help, chunks[3]);
         })?;
 
         if let Event::Key(key) = event::read()? {
-            match (app.search_mode, key.code) {
-                (true, KeyCode::Esc) => {
-                    app.search_mode = false;
-                    app.search_query.clear();
-                    app.update_search();
-                }
-                (true, KeyCode::Backspace) => {
-                    app.search_query.pop();
-                    app.update_search();
-                }
-                (true, KeyCode::Char(c)) => {
-                    app.search_query.push(c);
-                    app.update_search();
-                }
-                (false, KeyCode::Char('q')) => return Ok(None),
-                // (false, KeyCode::Char('/')) => {
-                //     app.search_mode = true;
-                //     app.search_query.clear();
-                // }
-                (false, KeyCode::Char('j')) | (false, KeyCode::Down) => app.next(),
-                (false, KeyCode::Char('k')) | (false, KeyCode::Up) => app.previous(),
-                (false, KeyCode::Enter) => {
+            match key.code {
+                // Script navigation
+                KeyCode::Up | KeyCode::Char('k') => app.previous(),
+                KeyCode::Down | KeyCode::Char('j') => app.next(),
+
+                // Project navigation
+                KeyCode::Left => app.previous_project(),
+                KeyCode::Right => app.next_project(),
+
+                // Script selection
+                KeyCode::Enter => {
                     if let Some(script) = app.get_selected_script() {
                         return Ok(Some(script.name.clone()));
                     }
                 }
-                (false, KeyCode::Char(c)) => {
+
+                // Project switching
+                KeyCode::Char('\t') => {
+                    if let Some((name, _)) = app.get_selected_project() {
+                        if !app.is_current_dir_project(name) {
+                            return Ok(Some(format!("__SWITCH_PROJECT__{}", name)));
+                        }
+                    }
+                }
+
+                // Search and quit
+                KeyCode::Char('/') => {
+                    app.search_mode = true;
+                    app.search_query.clear();
+                }
+                KeyCode::Char('q') | KeyCode::Esc => return Ok(None),
+
+                // Shortcut keys
+                KeyCode::Char(c) => {
                     if let Some(script) = app.scripts.iter().find(|s| s.shortcut == Some(c)) {
                         return Ok(Some(script.name.clone()));
                     }
                 }
-                (false, KeyCode::Esc) => return Ok(None),
                 _ => {}
             }
         }
@@ -572,11 +668,12 @@ fn run_interactive_mode(
     package_manager: &Box<dyn PackageManager>,
 ) -> Result<()> {
     let mut mode = if cli.tui { Mode::TUI } else { Mode::CLI };
+    let settings = Settings::new()?;
 
     loop {
         match mode {
             Mode::TUI => {
-                if let Some(exit_code) = run_tui_mode(cli, &scripts, package_manager)? {
+                if let Some(exit_code) = run_tui_mode(cli, &scripts, package_manager, &settings)? {
                     std::process::exit(exit_code);
                 }
                 break;
@@ -601,15 +698,16 @@ fn run_tui_mode(
     cli: &Cli,
     scripts: &[Script],
     package_manager: &Box<dyn PackageManager>,
+    settings: &Settings,
 ) -> Result<Option<i32>> {
     stdout().execute(EnterAlternateScreen)?;
     loop {
         enable_raw_mode()?;
         let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
         let theme = cli.get_effective_theme(&Settings::new().expect("Failed to load config"));
-        let mut app = App::new(scripts.to_vec(), theme);
+        let current_dir = std::env::current_dir()?;
+        let mut app = App::new(scripts.to_vec(), theme, settings.projects.clone(), &current_dir);
         let result = run_app(&mut terminal, &mut app);
-
         // Cleanup terminal
         disable_raw_mode()?;
         stdout().execute(LeaveAlternateScreen)?;
