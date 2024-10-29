@@ -2,7 +2,7 @@ use serde::Deserialize;
 use std::{collections::HashMap, fs, path::Path, process::Command};
 use toml::Value;
 
-use crate::script_type::{Script, ScriptType, PRIORITY_SCRIPTS};
+use crate::script_type::{Script, ScriptType, SPECIAL_SCRIPTS};
 use anyhow::Result;
 
 pub trait PackageManager {
@@ -104,7 +104,7 @@ impl PackageManager for NodePackageManager {
         let mut scripts = Vec::new();
         if let Some(script_map) = package.scripts {
             // Process priority scripts first
-            for &priority in PRIORITY_SCRIPTS {
+            for &priority in SPECIAL_SCRIPTS {
                 if let Some(command) = script_map.get(priority) {
                     let script_type = ScriptType::from_script(priority, command);
                     scripts.push(Script {
@@ -120,7 +120,7 @@ impl PackageManager for NodePackageManager {
             // Process remaining scripts alphabetically
             let mut other_scripts: Vec<_> = script_map
                 .iter()
-                .filter(|(name, _)| !PRIORITY_SCRIPTS.contains(&name.as_str()))
+                .filter(|(name, _)| !SPECIAL_SCRIPTS.contains(&name.as_str()))
                 .collect();
             other_scripts.sort_by(|(a, _), (b, _)| a.cmp(b));
 

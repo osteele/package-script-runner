@@ -25,7 +25,7 @@ use std::{
 };
 
 use crate::package_managers::{detect_package_manager_in_dir, PackageManager};
-use crate::script_type::{Script, ScriptType, PRIORITY_SCRIPTS};
+use crate::script_type::{Script, ScriptType, SPECIAL_SCRIPTS, find_synonym_script};
 
 fn search_upwards_for_package_manager(dir: &Path) -> Option<(Box<dyn PackageManager>, PathBuf)> {
     let mut current_dir = dir;
@@ -176,7 +176,7 @@ fn run_app(
                 .iter()
                 .map(|&i| {
                     let script = &app.scripts[i];
-                    let is_priority = PRIORITY_SCRIPTS.contains(&script.name.as_str());
+                    let is_priority = SPECIAL_SCRIPTS.contains(&script.name.as_str());
                     let shortcut = script
                         .shortcut
                         .map(|c| format!("[{}] ", c))
@@ -184,7 +184,7 @@ fn run_app(
 
                     let content = if i > 0
                         && is_priority
-                            != PRIORITY_SCRIPTS.contains(&app.scripts[i - 1].name.as_str())
+                            != SPECIAL_SCRIPTS.contains(&app.scripts[i - 1].name.as_str())
                     {
                         vec![
                             Line::from("───────────────────"),
@@ -368,40 +368,6 @@ impl Cli {
     }
 }
 
-fn find_synonym_script(scripts: &[Script], name: &str) -> Option<String> {
-    match name {
-        "dev" => scripts.iter().find_map(|s| {
-            if s.name == "start" || s.name == "run" {
-                Some(s.name.clone())
-            } else {
-                None
-            }
-        }),
-        "run" => scripts.iter().find_map(|s| {
-            if s.name == "run" || s.name == "dev" {
-                Some(s.name.clone())
-            } else {
-                None
-            }
-        }),
-        "typecheck" => scripts.iter().find_map(|s| {
-            if s.name == "tc" {
-                Some(s.name.clone())
-            } else {
-                None
-            }
-        }),
-        "tc" => scripts.iter().find_map(|s| {
-            if s.name == "typecheck" {
-                Some(s.name.clone())
-            } else {
-                None
-            }
-        }),
-        _ => None,
-    }
-}
-
 // Add this new function
 fn run_cli_mode(scripts: &[Script], _theme: Theme) -> Result<Option<String>> {
     println!("Available scripts (press key to select):");
@@ -485,12 +451,136 @@ enum Mode {
     TUI,
 }
 
+fn handle_list_flag(scripts: &[Script]) {
+    println!("Available scripts:");
+    for script in scripts {
+        println!("  {} - {}", script.name, script.command);
+        if let Some(desc) = &script.description {
+            println!("    Description: {}", desc);
+        }
+        println!();
+    }
+}
+
+fn handle_direct_script_execution(
+    cli: &Cli,
+    scripts: &[Script],
+    package_manager: &Box<dyn PackageManager>,
+) -> Result<i32> {
+    let command = cli.command.as_ref().unwrap();
+    let script_to_run = match command.as_str() {
+        cmd if SPECIAL_SCRIPTS.contains(&cmd) => {
+            if cli.script.is_some() {
+                anyhow::bail!("Cannot specify script name with special command '{}'", command);
+            }
+            if let Some(script) = scripts.iter().find(|s| &s.name == command) {
+                script.name.clone()
+            } else if let Some(synonym) = find_synonym_script(&scripts, command) {
+                synonym
+            } else {
+                anyhow::bail!("Script '{}' not found", command);
+            }
+        }
+        "run" => {
+            if let Some(script_name) = &cli.script {
+                if let Some(script) = scripts.iter().find(|s| &s.name == script_name) {
+                    script.name.clone()
+                } else {
+                    anyhow::bail!("Script '{}' not found", script_name);
+                }
+            } else {
+                if let Some(script) = scripts.iter().find(|s| s.name == "run") {
+                    script.name.clone()
+                } else if let Some(synonym) = find_synonym_script(&scripts, "run") {
+                    synonym
+                } else {
+                    anyhow::bail!("No script name provided and no 'run' script found");
+                }
+            }
+        }
+        _ => anyhow::bail!("Unknown command '{}'. Use 'run <script>' for custom scripts", command),
+    };
+
+    let mut env_vars = std::env::vars().collect::<HashMap<String, String>>();
+    if command == "dev" && (script_to_run == "start" || script_to_run == "run") {
+        env_vars.insert("NODE_ENV".to_string(), "dev".to_string());
+    }
+
+    run_script_with_env(&package_manager, &script_to_run, &cli.args, &env_vars)
+}
+
+fn run_interactive_mode(
+    cli: &Cli,
+    scripts: Vec<Script>,
+    package_manager: &Box<dyn PackageManager>,
+) -> Result<()> {
+    let mut mode = if cli.tui { Mode::TUI } else { Mode::CLI };
+
+    loop {
+        match mode {
+            Mode::TUI => {
+                if let Some(exit_code) = run_tui_mode(cli, &scripts, package_manager)? {
+                    std::process::exit(exit_code);
+                }
+                break;
+            }
+            Mode::CLI => {
+                if let Ok(Some(script)) = run_cli_mode(&scripts, cli.get_effective_theme()) {
+                    if script == "__TUI_MODE__" {
+                        mode = Mode::TUI;
+                        continue;
+                    }
+                    let exit_code = run_script(&package_manager, &script, &[])?;
+                    std::process::exit(exit_code);
+                }
+                break;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn run_tui_mode(
+    cli: &Cli,
+    scripts: &[Script],
+    package_manager: &Box<dyn PackageManager>,
+) -> Result<Option<i32>> {
+    stdout().execute(EnterAlternateScreen)?;
+    loop {
+        enable_raw_mode()?;
+        let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
+        let mut app = App::new(scripts.to_vec(), cli.get_effective_theme());
+        let result = run_app(&mut terminal, &mut app);
+
+        // Cleanup terminal
+        disable_raw_mode()?;
+        stdout().execute(LeaveAlternateScreen)?;
+
+        // Run selected script
+        if let Ok(Some(script)) = result {
+            let exit_code = run_script(&package_manager, &script, &[])?;
+
+            if cli.r#loop {
+                if exit_code != 0 {
+                    display_error_splash(&mut terminal, exit_code)?;
+                }
+                stdout().execute(EnterAlternateScreen)?;
+                enable_raw_mode()?;
+            } else {
+                return Ok(Some(exit_code));
+            }
+        } else {
+            break;
+        }
+    }
+    Ok(None)
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    let effective_theme = cli.get_effective_theme();
 
     // Change directory if specified
-    if let Some(dir) = cli.dir {
+    if let Some(dir) = &cli.dir {
         std::env::set_current_dir(dir)?;
     }
 
@@ -507,118 +597,20 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    // If --list flag is provided, print scripts and exit
+    // Handle --list flag
     if cli.list {
-        println!("Available scripts:");
-        for script in &scripts {
-            println!("  {} - {}", script.name, script.command);
-            if let Some(desc) = &script.description {
-                println!("    Description: {}", desc);
-            }
-            println!();
-        }
+        handle_list_flag(&scripts);
         return Ok(());
     }
 
     // Handle direct script execution
-    if let Some(command) = cli.command {
-        let script_to_run = match command.as_str() {
-            // Special commands that can be run directly
-            cmd if PRIORITY_SCRIPTS.contains(&cmd) => {
-                if cli.script.is_some() {
-                    anyhow::bail!("Cannot specify script name with special command '{}'", command);
-                }
-                if let Some(script) = scripts.iter().find(|s| s.name == command) {
-                    script.name.clone()
-                } else if let Some(synonym) = find_synonym_script(&scripts, &command) {
-                    synonym
-                } else {
-                    anyhow::bail!("Script '{}' not found", command);
-                }
-            }
-            // The 'run' command can either run a specified script or try to find a 'run' script
-            "run" => {
-                if let Some(script_name) = cli.script {
-                    // Run the specified script
-                    if let Some(script) = scripts.iter().find(|s| s.name == script_name) {
-                        script.name.clone()
-                    } else {
-                        anyhow::bail!("Script '{}' not found", script_name);
-                    }
-                } else {
-                    // Try to find a script named 'run' or its synonyms
-                    if let Some(script) = scripts.iter().find(|s| s.name == "run") {
-                        script.name.clone()
-                    } else if let Some(synonym) = find_synonym_script(&scripts, "run") {
-                        synonym
-                    } else {
-                        anyhow::bail!("No script name provided and no 'run' script found");
-                    }
-                }
-            }
-            // Unknown command
-            _ => anyhow::bail!("Unknown command '{}'. Use 'run <script>' for custom scripts", command),
-        };
-
-        let mut env_vars = std::env::vars().collect::<HashMap<String, String>>();
-        if command == "dev" && (script_to_run == "start" || script_to_run == "run") {
-            env_vars.insert("NODE_ENV".to_string(), "dev".to_string());
-        }
-
-        let exit_code = run_script_with_env(&package_manager, &script_to_run, &cli.args, &env_vars)?;
+    if cli.command.is_some() {
+        let exit_code = handle_direct_script_execution(&cli, &scripts, &package_manager)?;
         std::process::exit(exit_code);
     }
 
-    let mut mode = if cli.tui { Mode::TUI } else { Mode::CLI };
-
-    loop {
-        match mode {
-            Mode::TUI => {
-                stdout().execute(EnterAlternateScreen)?;
-                loop {
-                    enable_raw_mode()?;
-                    let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
-                    let mut app = App::new(scripts.clone(), effective_theme);
-                    let result = run_app(&mut terminal, &mut app);
-
-                    // Cleanup terminal
-                    disable_raw_mode()?;
-                    stdout().execute(LeaveAlternateScreen)?;
-
-                    // Run selected script
-                    if let Ok(Some(script)) = result {
-                        let exit_code = run_script(&package_manager, &script, &[])?;
-
-                        if cli.r#loop {
-                            if exit_code != 0 {
-                                display_error_splash(&mut terminal, exit_code)?;
-                            }
-                            stdout().execute(EnterAlternateScreen)?;
-                            enable_raw_mode()?;
-                        } else {
-                            std::process::exit(exit_code);
-                        }
-                    } else {
-                        break;
-                    }
-                }
-                break;
-            }
-            Mode::CLI => {
-                if let Ok(Some(script)) = run_cli_mode(&scripts, effective_theme) {
-                    if script == "__TUI_MODE__" {
-                        mode = Mode::TUI;
-                        continue;
-                    }
-                    let exit_code = run_script(&package_manager, &script, &[])?;
-                    std::process::exit(exit_code);
-                }
-                break;
-            }
-        }
-    }
-
-    Ok(())
+    // Run interactive mode (TUI or CLI)
+    run_interactive_mode(&cli, scripts, &package_manager)
 }
 
 fn run_script(
