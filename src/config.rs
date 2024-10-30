@@ -1,9 +1,11 @@
 use config::{Config, ConfigError, File};
 use serde::Deserialize;
 use serde::Serialize;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::collections::HashMap;
+
+use crate::themes::Theme;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Settings {
@@ -13,14 +15,6 @@ pub struct Settings {
     pub projects: HashMap<String, PathBuf>,
     #[serde(default = "default_show_emoji")]
     pub show_emoji: bool,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Theme {
-    Dark,
-    Light,
-    NoColor,
 }
 
 impl Default for Theme {
@@ -45,8 +39,7 @@ impl Settings {
 
     fn get_config_path() -> PathBuf {
         // First check current directory
-        let current_dir = std::env::current_dir()
-            .unwrap_or_else(|_| PathBuf::from("."));
+        let current_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let local_config = current_dir.join(".pkr.toml");
 
         if local_config.exists() {
@@ -86,7 +79,10 @@ impl Settings {
 
     pub fn add_project(&mut self, name: String, path: PathBuf) -> Result<(), ConfigError> {
         if self.projects.contains_key(&name) {
-            return Err(ConfigError::Message(format!("Project '{}' already exists", name)));
+            return Err(ConfigError::Message(format!(
+                "Project '{}' already exists",
+                name
+            )));
         }
         self.projects.insert(name, path);
         self.save()
@@ -94,10 +90,16 @@ impl Settings {
 
     pub fn rename_project(&mut self, old_name: &str, new_name: String) -> Result<(), ConfigError> {
         if !self.projects.contains_key(old_name) {
-            return Err(ConfigError::Message(format!("Project '{}' not found", old_name)));
+            return Err(ConfigError::Message(format!(
+                "Project '{}' not found",
+                old_name
+            )));
         }
         if self.projects.contains_key(&new_name) {
-            return Err(ConfigError::Message(format!("Project '{}' already exists", new_name)));
+            return Err(ConfigError::Message(format!(
+                "Project '{}' already exists",
+                new_name
+            )));
         }
 
         if let Some(path) = self.projects.remove(old_name) {
@@ -105,13 +107,19 @@ impl Settings {
             self.save()?;
             Ok(())
         } else {
-            Err(ConfigError::Message(format!("Failed to rename project '{}'", old_name)))
+            Err(ConfigError::Message(format!(
+                "Failed to rename project '{}'",
+                old_name
+            )))
         }
     }
 
     pub fn remove_project(&mut self, name: &str) -> Result<(), ConfigError> {
         if !self.projects.contains_key(name) {
-            return Err(ConfigError::Message(format!("Project '{}' not found", name)));
+            return Err(ConfigError::Message(format!(
+                "Project '{}' not found",
+                name
+            )));
         }
         self.projects.remove(name);
         self.save()

@@ -15,61 +15,9 @@ use ratatui::{
 use scopeguard::defer;
 use std::io::stdout;
 
-use crate::{
-    config::{Settings, Theme},
-    project::create_project,
-    script_type::{group_scripts, ScriptType},
-};
-use crate::{
-    project::Project,
-    script_type::{Script, ScriptCategory},
-};
-
-impl ScriptCategory {
-    fn color(&self, theme: Theme) -> Color {
-        match theme {
-            Theme::NoColor => Color::Reset,
-            Theme::Dark => match self {
-                ScriptCategory::Build => Color::Rgb(255, 204, 0),
-                ScriptCategory::Run => Color::Rgb(0, 255, 0),
-                ScriptCategory::Development => Color::Rgb(0, 255, 0),
-                ScriptCategory::Deployment => Color::Rgb(0, 191, 255),
-                ScriptCategory::Other => Color::White,
-            },
-            Theme::Light => match self {
-                ScriptCategory::Build => Color::Rgb(204, 102, 0),
-                ScriptCategory::Run => Color::Rgb(0, 128, 0),
-                ScriptCategory::Development => Color::Rgb(0, 153, 0),
-                ScriptCategory::Deployment => Color::Rgb(153, 0, 0),
-                ScriptCategory::Other => Color::Black,
-            },
-        }
-    }
-}
-
-impl ScriptType {
-    fn color(&self, theme: Theme) -> Color {
-        match theme {
-            Theme::NoColor => Color::Reset,
-            Theme::Dark => match self {
-                ScriptType::Build => Color::Rgb(255, 204, 0),
-                ScriptType::Format => Color::Rgb(191, 0, 255),
-                ScriptType::Lint => Color::Rgb(255, 128, 0),
-                ScriptType::Clean => Color::Rgb(192, 192, 192),
-                ScriptType::Test => Color::Rgb(0, 255, 255),
-                _ => self.category().color(theme),
-            },
-            Theme::Light => match self {
-                ScriptType::Build => Color::Rgb(204, 102, 0),
-                ScriptType::Format => Color::Rgb(102, 0, 204),
-                ScriptType::Lint => Color::Rgb(204, 51, 0),
-                ScriptType::Test => Color::Rgb(0, 102, 204),
-                ScriptType::Clean => Color::Rgb(64, 64, 64),
-                _ => self.category().color(theme),
-            },
-        }
-    }
-}
+use crate::themes::Theme;
+use crate::{config::Settings, project::create_project, script_type::group_scripts};
+use crate::{project::Project, script_type::Script};
 
 struct App<'a> {
     project: &'a Project,
@@ -80,6 +28,7 @@ struct App<'a> {
     selected_project_state: ListState,
     selected_script_state: ListState,
     show_emoji: bool,
+    visual_to_script_index: Vec<Option<usize>>,
 }
 
 impl<'a> App<'a> {
@@ -101,6 +50,7 @@ impl<'a> App<'a> {
             visible_script_indices: filtered_indices,
             selected_project_state: ListState::default(),
             show_emoji: settings.show_emoji,
+            visual_to_script_index: Vec::new(),
         };
 
         app.selected_script_state.select(Some(0));
@@ -112,7 +62,16 @@ impl<'a> App<'a> {
 
     fn next(&mut self) {
         let i = match self.selected_script_state.selected() {
-            Some(i) => (i + 1) % self.visible_script_indices.len(),
+            Some(i) => {
+                let mut next = (i + 1) % self.visual_to_script_index.len();
+                // Skip dividers
+                while next < self.visual_to_script_index.len()
+                    && self.visual_to_script_index[next].is_none()
+                {
+                    next = (next + 1) % self.visual_to_script_index.len();
+                }
+                next
+            }
             None => 0,
         };
         self.selected_script_state.select(Some(i));
@@ -121,7 +80,22 @@ impl<'a> App<'a> {
     fn previous(&mut self) {
         let i = match self.selected_script_state.selected() {
             Some(i) => {
-                (i + self.visible_script_indices.len() - 1) % self.visible_script_indices.len()
+                let mut prev = if i == 0 {
+                    self.visual_to_script_index.len() - 1
+                } else {
+                    i - 1
+                };
+                // Skip dividers
+                while prev < self.visual_to_script_index.len()
+                    && self.visual_to_script_index[prev].is_none()
+                {
+                    prev = if prev == 0 {
+                        self.visual_to_script_index.len() - 1
+                    } else {
+                        prev - 1
+                    };
+                }
+                prev
             }
             None => 0,
         };
@@ -131,8 +105,9 @@ impl<'a> App<'a> {
     fn get_selected_script(&self) -> Option<&Script> {
         self.selected_script_state
             .selected()
-            .and_then(|i| self.visible_script_indices.get(i))
-            .map(|&i| &self.scripts[i])
+            .and_then(|i| self.visual_to_script_index.get(i))
+            .and_then(|opt| opt.as_ref())
+            .map(|&script_idx| &self.scripts[script_idx])
     }
 
     fn next_project(&mut self) {
@@ -366,49 +341,56 @@ fn run_app_loop(
             }
 
             // Scripts list - collect items before rendering
+            let grouped_scripts = app
+                .group_scripts()
+                .into_iter()
+                .map(|group| {
+                    group
+                        .into_iter()
+                        .map(|script| script.clone())
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>();
+
+            let mut visual_mapping = Vec::new();
             let items: Vec<ListItem> = {
                 let mut items = Vec::new();
-                let grouped_scripts = app.group_scripts();
+
                 for (group_idx, group) in grouped_scripts.iter().enumerate() {
                     if group_idx > 0 {
                         items.push(ListItem::new(Line::from("───────────────────")));
+                        visual_mapping.push(None);
                     }
 
-                    for script_ref in group {
-                        let script = &app
-                            .scripts
-                            .iter()
-                            .find(|s| s.name == script_ref.name)
-                            .unwrap()
-                            .command;
-                        let icon = if app.show_emoji {
-                            script_ref.icon()
-                        } else {
-                            None
-                        };
-                        let shortcut = script_ref
+                    for (script_idx, script) in group.iter().enumerate() {
+                        let shortcut = script
                             .shortcut
                             .map(|c| format!("[{}] ", c))
                             .unwrap_or_default();
+
+                        let icon = if app.show_emoji { script.icon() } else { None };
+
                         items.push(ListItem::new(Line::from(vec![
                             Span::styled(
                                 format!(
-                                    "{}{}{}",
+                                    "{}{}",
                                     icon.map(|s| format!("{} ", s)).unwrap_or_default(),
-                                    shortcut,
-                                    script_ref.name
+                                    shortcut
                                 ),
                                 Style::default()
-                                    .fg(script_ref.category.color(app.theme))
+                                    .fg(script.category.color(app.theme))
                                     .add_modifier(Modifier::BOLD),
                             ),
                             Span::raw(": "),
-                            Span::raw(script),
+                            Span::raw(&script.command),
                         ])));
+                        visual_mapping.push(Some(script_idx));
                     }
                 }
                 items
             };
+
+            app.visual_to_script_index = visual_mapping;
 
             let list = List::new(items)
                 .block(

@@ -1,9 +1,10 @@
 mod config;
+mod execution;
 mod package_managers;
 mod project;
 mod script_type;
+mod themes;
 mod tui;
-mod  execution;
 
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -11,31 +12,15 @@ use crossterm::{
     event::{self, Event, KeyCode},
     terminal::{disable_raw_mode, enable_raw_mode},
 };
-use std::{
-    collections::HashMap,
-    io::Write,
-    path::PathBuf,
-    str::FromStr,
-};
 
-use crate::config::{Settings, Theme};
+use std::{collections::HashMap, io::Write, path::PathBuf};
+
+use crate::config::Settings;
+use crate::execution::{run_script, run_script_with_env};
 use crate::package_managers::PackageManager;
 use crate::project::{detect_project, Project};
 use crate::script_type::{find_synonym_script, Script, SPECIAL_SCRIPTS};
-use crate::execution::{run_script, run_script_with_env};
-
-impl FromStr for Theme {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "dark" => Ok(Theme::Dark),
-            "light" => Ok(Theme::Light),
-            "nocolor" => Ok(Theme::NoColor),
-            _ => Err(format!("Invalid theme: {}", s)),
-        }
-    }
-}
+use crate::themes::Theme;
 
 #[derive(Parser)]
 #[command(name = "psr")]
@@ -280,10 +265,7 @@ fn handle_direct_script_execution(
     run_script_with_env(&package_manager, &script_to_run, &cli.args, &env_vars)
 }
 
-fn run_interactive_mode(
-    cli: &Cli,
-    project: &Project,
-) -> Result<()> {
+fn run_interactive_mode(cli: &Cli, project: &Project) -> Result<()> {
     let mut mode = if cli.tui { Mode::TUI } else { Mode::CLI };
     let settings = Settings::new()?;
 
@@ -313,11 +295,7 @@ fn run_interactive_mode(
     Ok(())
 }
 
-fn run_tui_mode(
-    _cli: &Cli,
-    project: &Project,
-    settings: &Settings,
-) -> Result<()> {
+fn run_tui_mode(_cli: &Cli, project: &Project, settings: &Settings) -> Result<()> {
     tui::run_app(project, settings)
 }
 
@@ -367,8 +345,7 @@ fn main() -> Result<()> {
 
     // Detect package manager
     let current_dir = std::env::current_dir()?;
-    let project = detect_project(&current_dir)
-        .context("Could not detect package manager")?;
+    let project = detect_project(&current_dir).context("Could not detect package manager")?;
 
     // Find scripts
     let scripts = project.scripts()?;
