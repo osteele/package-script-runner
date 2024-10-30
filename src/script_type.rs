@@ -3,12 +3,34 @@ pub struct Script {
     pub name: String,
     pub command: String,
     pub description: Option<String>,
-    pub shortcut: Option<char>,
+    pub category: ScriptCategory,
     pub script_type: ScriptType,
+    pub shortcut: Option<char>,
 }
 
-#[allow(dead_code)]
 impl Script {
+    pub fn new(
+        name: &str,
+        command: &str,
+        description: Option<String>,
+        script_type: Option<ScriptType>,
+        shortcut: Option<char>,
+    ) -> Self {
+        Self {
+            name: name.to_string(),
+            command: command.to_string(),
+            description,
+            category: ScriptCategory::from_script(name, command),
+            script_type: script_type.unwrap_or(ScriptType::from_script(name, command)),
+            shortcut,
+        }
+    }
+
+    pub fn icon(&self) -> Option<&'static str> {
+        self.script_type.icon()
+    }
+
+    #[allow(dead_code)]
     pub fn matches_search(&self, query: &str) -> bool {
         let query = query.to_lowercase();
         self.name.to_lowercase().contains(&query)
@@ -20,19 +42,19 @@ impl Script {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
-pub enum ScriptType {
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum ScriptCategory {
     Build,
-    Development,
-    Test,
+    Clean,
     Deployment,
+    Development,
     Format,
     Lint,
-    Clean,
+    Test,
     Other,
 }
 
-impl ScriptType {
+impl ScriptCategory {
     pub fn from_script(name: &str, command: &str) -> Self {
         let text = format!("{} {}", name, command).to_lowercase();
         if text.contains("build") || text.contains("webpack") || text.contains("compile") {
@@ -51,7 +73,8 @@ impl ScriptType {
             || text.contains("clippy")
             || text.contains("flake8")
             || text.contains("pylint")
-            || text.contains("ruff") {
+            || text.contains("ruff")
+        {
             Self::Lint
         } else if text.contains("clean") || text.contains("clear") {
             Self::Clean
@@ -60,16 +83,113 @@ impl ScriptType {
         }
     }
 
-    pub fn emoji(&self) -> Option<&'static str> {
+    #[allow(dead_code)]
+    pub fn shortcut(name: &str) -> Option<char> {
+        match name {
+            "clean" => Some('x'),
+            "deployment" => Some('p'),
+            s => {
+                if SPECIAL_SCRIPTS.contains(&s) {
+                    Some(s.chars().next().unwrap())
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
+    pub fn icon(&self) -> Option<&'static str> {
+        match self {
+            ScriptCategory::Build => Some("🔨"),
+            ScriptCategory::Clean => Some("🧹"),
+            ScriptCategory::Deployment => Some("📦"),
+            ScriptCategory::Development => Some("🚀"),
+            ScriptCategory::Format => Some("✨"),
+            ScriptCategory::Lint => Some("🔍"),
+            ScriptCategory::Test => Some("🧪"),
+            ScriptCategory::Other => None,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum ScriptType {
+    Build,
+    Check,
+    Clean,
+    Deploy,
+    Format,
+    Lint,
+    Publish,
+    Run,
+    Test,
+    Other,
+}
+
+impl ScriptType {
+    pub fn from_script(name: &str, command: &str) -> Self {
+        let text = format!("{} {}", name, command).to_lowercase();
+        if text.contains("build") || text.contains("webpack") || text.contains("compile") {
+            Self::Build
+        } else if text.contains("check") {
+            Self::Check
+        } else if text.contains("dev")
+            || text.contains("start")
+            || text.contains("watch")
+            || text.contains("run")
+        {
+            Self::Run
+        } else if text.contains("test") || text.contains("jest") || text.contains("vitest") {
+            Self::Test
+        } else if text.contains("deploy") {
+            Self::Deploy
+        } else if text.contains("publish") {
+            Self::Publish
+        } else if text.contains("format") || text.contains("prettier") {
+            Self::Format
+        } else if text.contains("lint")
+            || text.contains("eslint")
+            || text.contains("stylelint")
+            || text.contains("clippy")
+            || text.contains("flake8")
+            || text.contains("pylint")
+            || text.contains("ruff")
+        {
+            Self::Lint
+        } else if text.contains("clean") || text.contains("clear") {
+            Self::Clean
+        } else {
+            Self::Other
+        }
+    }
+
+    pub fn category(&self) -> ScriptCategory {
+        match self {
+            Self::Build => ScriptCategory::Build,
+            Self::Check => ScriptCategory::Lint,
+            Self::Clean => ScriptCategory::Clean,
+            Self::Deploy => ScriptCategory::Deployment,
+            Self::Format => ScriptCategory::Format,
+            Self::Lint => ScriptCategory::Lint,
+            Self::Publish => ScriptCategory::Deployment,
+            Self::Run => ScriptCategory::Development,
+            Self::Test => ScriptCategory::Test,
+            Self::Other => ScriptCategory::Other,
+        }
+    }
+
+    pub fn icon(&self) -> Option<&'static str> {
         match self {
             ScriptType::Build => Some("🔨"),
-            ScriptType::Development => Some("🚀"),
-            ScriptType::Test => Some("🧪"),
-            ScriptType::Deployment => Some("📦"),
+            ScriptType::Check => Some("✅"),
+            ScriptType::Clean => Some("🧹"),
+            ScriptType::Deploy => Some("🚀"),
             ScriptType::Format => Some("✨"),
             ScriptType::Lint => Some("🔍"),
-            ScriptType::Clean => Some("🧹"),
-            ScriptType::Other => None,
+            ScriptType::Publish => Some("📦"),
+            ScriptType::Run => Some("▶️"),
+            ScriptType::Test => Some("🧪"),
+            ScriptType::Other => self.category().icon(),
         }
     }
 }
@@ -104,14 +224,37 @@ pub fn find_synonym_script(scripts: &[Script], name: &str) -> Option<String> {
     ];
 
     // Find the synonym group that contains our script name
-    SYNONYMS.iter()
+    SYNONYMS
+        .iter()
         .find(|group| group.contains(&name))
         .and_then(|group| {
             // Look for the first script that exists from this group
-            group.iter()
+            group
+                .iter()
                 .find(|&&synonym| scripts.iter().any(|s| s.name == synonym))
                 .map(|&s| s.to_string())
         })
+}
+
+pub fn group_scripts<'a>(scripts: &'a [Script]) -> Vec<Vec<&'a Script>> {
+    let mut prioritized = Vec::new();
+    let mut with_shortcuts = Vec::new();
+    let mut others = Vec::new();
+
+    for script in scripts.iter() {
+        if script.category != ScriptCategory::Other {
+            prioritized.push(script);
+        } else if script.shortcut.is_some() {
+            with_shortcuts.push(script);
+        } else {
+            others.push(script);
+        }
+    }
+
+    vec![prioritized, with_shortcuts, others]
+        .into_iter()
+        .filter(|group| !group.is_empty())
+        .collect()
 }
 
 #[cfg(test)]
@@ -123,8 +266,9 @@ mod tests {
             name: name.to_string(),
             command: "dummy".to_string(),
             description: None,
-            shortcut: None,
             script_type: ScriptType::Other,
+            shortcut: None,
+            category: ScriptCategory::Other,
         }
     }
 
@@ -182,9 +326,7 @@ mod tests {
     #[test]
     fn test_find_synonym_script_order() {
         // Test that we get the first script from the SYNONYMS list that exists
-        let scripts = vec![
-            make_script("dev"),
-        ];
+        let scripts = vec![make_script("dev")];
 
         // When looking for any of these, should get "dev" because it's first in SYNONYMS
         assert_eq!(

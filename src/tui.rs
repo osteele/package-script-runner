@@ -15,42 +15,45 @@ use ratatui::{
 use scopeguard::defer;
 use std::io::stdout;
 
-use crate::project::Project;
-use crate::script_type::{Script, ScriptType, SPECIAL_SCRIPTS};
 use crate::{
     config::{Settings, Theme},
     project::create_project,
+    script_type::group_scripts,
+};
+use crate::{
+    project::Project,
+    script_type::{Script, ScriptCategory},
 };
 
-impl ScriptType {
+impl ScriptCategory {
     fn color(&self, theme: Theme) -> Color {
         match theme {
             Theme::NoColor => Color::Reset,
             Theme::Dark => match self {
-                ScriptType::Build => Color::Rgb(255, 204, 0),
-                ScriptType::Development => Color::Rgb(0, 255, 0),
-                ScriptType::Test => Color::Rgb(0, 255, 255),
-                ScriptType::Deployment => Color::Rgb(0, 191, 255),
-                ScriptType::Format => Color::Rgb(191, 0, 255),
-                ScriptType::Lint => Color::Rgb(255, 128, 0),
-                ScriptType::Clean => Color::Rgb(192, 192, 192),
-                ScriptType::Other => Color::White,
+                ScriptCategory::Build => Color::Rgb(255, 204, 0),
+                ScriptCategory::Development => Color::Rgb(0, 255, 0),
+                ScriptCategory::Test => Color::Rgb(0, 255, 255),
+                ScriptCategory::Deployment => Color::Rgb(0, 191, 255),
+                ScriptCategory::Format => Color::Rgb(191, 0, 255),
+                ScriptCategory::Lint => Color::Rgb(255, 128, 0),
+                ScriptCategory::Clean => Color::Rgb(192, 192, 192),
+                ScriptCategory::Other => Color::White,
             },
             Theme::Light => match self {
-                ScriptType::Build => Color::Rgb(204, 102, 0),
-                ScriptType::Development => Color::Rgb(0, 153, 0),
-                ScriptType::Test => Color::Rgb(0, 102, 204),
-                ScriptType::Deployment => Color::Rgb(153, 0, 0),
-                ScriptType::Format => Color::Rgb(102, 0, 204),
-                ScriptType::Lint => Color::Rgb(204, 51, 0),
-                ScriptType::Clean => Color::Rgb(64, 64, 64),
-                ScriptType::Other => Color::Black,
+                ScriptCategory::Build => Color::Rgb(204, 102, 0),
+                ScriptCategory::Development => Color::Rgb(0, 153, 0),
+                ScriptCategory::Test => Color::Rgb(0, 102, 204),
+                ScriptCategory::Deployment => Color::Rgb(153, 0, 0),
+                ScriptCategory::Format => Color::Rgb(102, 0, 204),
+                ScriptCategory::Lint => Color::Rgb(204, 51, 0),
+                ScriptCategory::Clean => Color::Rgb(64, 64, 64),
+                ScriptCategory::Other => Color::Black,
             },
         }
     }
 }
 
-pub struct App<'a> {
+struct App<'a> {
     project: &'a Project,
     projects: &'a Vec<&'a Project>,
     theme: Theme,
@@ -167,7 +170,10 @@ impl<'a> App<'a> {
         self.visible_script_indices = (0..self.scripts.len()).collect();
     }
 
-    // Add this helper method
+    fn group_scripts(&self) -> Vec<Vec<&Script>> {
+        group_scripts(&self.scripts)
+    }
+
     fn is_current_dir_project(&self, name: &str) -> bool {
         name == "Current Directory"
     }
@@ -180,7 +186,7 @@ fn render_script_preview(script: &Script, theme: Theme, show_emoji: bool) -> Vec
             Span::raw(format!(
                 "{} {}",
                 if show_emoji {
-                    script.script_type.emoji().unwrap_or("")
+                    script.category.icon().unwrap_or("")
                 } else {
                     ""
                 },
@@ -190,8 +196,8 @@ fn render_script_preview(script: &Script, theme: Theme, show_emoji: bool) -> Vec
         Line::from(vec![
             Span::styled("Type: ", Style::default().add_modifier(Modifier::BOLD)),
             Span::styled(
-                format!("{:?}", script.script_type),
-                Style::default().fg(script.script_type.color(theme)),
+                format!("{:?}", script.category),
+                Style::default().fg(script.category.color(theme)),
             ),
         ]),
         Line::from(vec![
@@ -329,7 +335,7 @@ fn run_app_loop(
                 let projects_list = List::new(projects)
                     .block(
                         Block::default()
-                            .title("Projects (Tab to switch)")
+                            .title("Projects (←/→ to switch)")
                             .borders(Borders::ALL),
                     )
                     .highlight_style(
@@ -341,73 +347,67 @@ fn run_app_loop(
                 f.render_stateful_widget(projects_list, chunks[0], &mut app.selected_project_state);
             }
 
-            // Scripts list
-            let items: Vec<ListItem> = app
-                .visible_script_indices
-                .iter()
-                .map(|&i| {
-                    let script = &app.scripts[i];
-                    let is_priority = SPECIAL_SCRIPTS.contains(&script.name.as_str());
-                    let shortcut = script
-                        .shortcut
-                        .map(|c| format!("[{}] ", c))
-                        .unwrap_or_default();
+            // Scripts list - collect items before rendering
+            let items: Vec<ListItem> = {
+                let mut items = Vec::new();
+                let grouped_scripts = app.group_scripts();
+                for (group_idx, group) in grouped_scripts.iter().enumerate() {
+                    if group_idx > 0 {
+                        items.push(ListItem::new(Line::from("───────────────────")));
+                    }
 
-                    let emoji = if app.show_emoji {
-                        script.script_type.emoji().unwrap_or("")
-                    } else {
-                        ""
-                    };
-                    let name_with_emoji = if !emoji.is_empty() {
-                        format!("{} {}", emoji, script.name)
-                    } else {
-                        script.name.clone()
-                    };
-
-                    let content = if i > 0
-                        && is_priority
-                            != SPECIAL_SCRIPTS.contains(&app.scripts[i - 1].name.as_str())
-                    {
-                        vec![
-                            Line::from("───────────────────"),
-                            Line::from(vec![
-                                Span::styled(
-                                    format!("{}{}", shortcut, name_with_emoji),
-                                    Style::default()
-                                        .fg(script.script_type.color(app.theme))
-                                        .add_modifier(Modifier::BOLD),
-                                ),
-                                Span::raw(": "),
-                                Span::raw(&script.command),
-                            ]),
-                        ]
-                    } else {
-                        vec![Line::from(vec![
+                    for script_ref in group {
+                        let script = &app
+                            .scripts
+                            .iter()
+                            .find(|s| s.name == script_ref.name)
+                            .unwrap()
+                            .command;
+                        let icon = if app.show_emoji {
+                            script_ref.icon()
+                        } else {
+                            None
+                        };
+                        let shortcut = script_ref
+                            .shortcut
+                            .map(|c| format!("[{}] ", c))
+                            .unwrap_or_default();
+                        items.push(ListItem::new(Line::from(vec![
                             Span::styled(
-                                format!("{}{}", shortcut, name_with_emoji),
+                                format!(
+                                    "{}{}{}",
+                                    icon.map(|s| format!("{} ", s)).unwrap_or_default(),
+                                    shortcut,
+                                    script_ref.name
+                                ),
                                 Style::default()
-                                    .fg(script.script_type.color(app.theme))
+                                    .fg(script_ref.category.color(app.theme))
                                     .add_modifier(Modifier::BOLD),
                             ),
                             Span::raw(": "),
-                            Span::raw(&script.command),
-                        ])]
-                    };
-                    ListItem::new(content)
-                })
-                .collect();
+                            Span::raw(script),
+                        ])));
+                    }
+                }
+                items
+            };
 
             let list = List::new(items)
-                .block(Block::default().title("Scripts").borders(Borders::ALL))
+                .block(
+                    Block::default()
+                        .title("Scripts (↑/↓ to navigate)")
+                        .borders(Borders::ALL),
+                )
                 .highlight_style(Style::default().bg(Color::DarkGray));
 
             f.render_stateful_widget(list, chunks[1], &mut app.selected_script_state);
 
             // Preview panel
             if let Some(script) = app.get_selected_script() {
-                let preview = Paragraph::new(render_script_preview(script, app.theme, app.show_emoji))
-                    .block(Block::default().title("Details").borders(Borders::ALL))
-                    .wrap(Wrap { trim: true });
+                let preview =
+                    Paragraph::new(render_script_preview(script, app.theme, app.show_emoji))
+                        .block(Block::default().title("Details").borders(Borders::ALL))
+                        .wrap(Wrap { trim: true });
                 f.render_widget(preview, chunks[2]);
             }
 

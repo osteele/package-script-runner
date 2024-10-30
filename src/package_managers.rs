@@ -2,7 +2,7 @@ use serde::Deserialize;
 use std::{collections::HashMap, fs, path::Path, process::Command};
 use toml::Value;
 
-use crate::script_type::{Script, ScriptType, SPECIAL_SCRIPTS};
+use crate::script_type::{Script, ScriptCategory, ScriptType};
 use anyhow::Result;
 
 pub trait PackageManager {
@@ -103,37 +103,29 @@ impl PackageManager for NodePackageManager {
 
         let mut scripts = Vec::new();
         if let Some(script_map) = package.scripts {
-            // Process priority scripts first
-            for &priority in SPECIAL_SCRIPTS {
-                if let Some(command) = script_map.get(priority) {
-                    let script_type = ScriptType::from_script(priority, command);
-                    scripts.push(Script {
-                        name: priority.to_string(),
-                        command: command.clone(),
-                        description: package.descriptions.get(priority).cloned(),
-                        shortcut: Some(priority.chars().next().unwrap()),
-                        script_type,
-                    });
-                }
-            }
-
-            // Process remaining scripts alphabetically
-            let mut other_scripts: Vec<_> = script_map
-                .iter()
-                .filter(|(name, _)| !SPECIAL_SCRIPTS.contains(&name.as_str()))
+            // First collect all scripts
+            let mut all_scripts: Vec<_> = script_map
+                .into_iter()
+                .map(|(name, command)| {
+                    Script::new(
+                        &name,
+                        &command,
+                        package.descriptions.get(&name).cloned(),
+                        None,
+                        None,
+                    )
+                })
                 .collect();
-            other_scripts.sort_by(|(a, _), (b, _)| a.cmp(b));
 
-            for (name, command) in other_scripts {
-                let script_type = ScriptType::from_script(name, command);
-                scripts.push(Script {
-                    name: name.clone(),
-                    command: command.clone(),
-                    description: package.descriptions.get(name).cloned(),
-                    shortcut: None,
-                    script_type,
-                });
-            }
+            // Sort scripts: non-Other types first (alphabetically), then Other types (alphabetically)
+            all_scripts.sort_by(|a, b| match (a.category, b.category) {
+                (ScriptCategory::Other, ScriptCategory::Other) => a.name.cmp(&b.name),
+                (ScriptCategory::Other, _) => std::cmp::Ordering::Greater,
+                (_, ScriptCategory::Other) => std::cmp::Ordering::Less,
+                _ => a.name.cmp(&b.name),
+            });
+
+            scripts.extend(all_scripts);
         }
         Ok(scripts)
     }
@@ -165,51 +157,51 @@ impl PackageManager for RustPackageManager {
 
         // Add default Cargo commands
         scripts.extend(vec![
-            Script {
-                name: "build".to_string(),
-                command: "cargo build".to_string(),
-                description: Some("Compile the current package".to_string()),
-                shortcut: Some('b'),
-                script_type: ScriptType::Build,
-            },
-            Script {
-                name: "run".to_string(),
-                command: "cargo run".to_string(),
-                description: Some("Run the main binary of the current package".to_string()),
-                shortcut: Some('r'),
-                script_type: ScriptType::Development,
-            },
-            Script {
-                name: "test".to_string(),
-                command: "cargo test".to_string(),
-                description: Some("Run the tests".to_string()),
-                shortcut: Some('t'),
-                script_type: ScriptType::Test,
-            },
-            Script {
-                name: "check".to_string(),
-                command: "cargo check".to_string(),
-                description: Some(
+            Script::new(
+                "build",
+                "cargo build",
+                Some("Compile the current package".to_string()),
+                Some(ScriptType::Build),
+                Some('b'),
+            ),
+            Script::new(
+                "run",
+                "cargo run",
+                Some("Run the main binary of the current package".to_string()),
+                Some(ScriptType::Run),
+                Some('r'),
+            ),
+            Script::new(
+                "test",
+                "cargo test",
+                Some("Run the tests".to_string()),
+                Some(ScriptType::Test),
+                Some('t'),
+            ),
+            Script::new(
+                "check",
+                "cargo check",
+                Some(
                     "Analyze the current package and report errors, but don't build object files"
                         .to_string(),
                 ),
-                shortcut: Some('c'),
-                script_type: ScriptType::Other,
-            },
-            Script {
-                name: "lint".to_string(),
-                command: "cargo clippy".to_string(),
-                description: Some("Run the Rust linter (clippy)".to_string()),
-                shortcut: Some('l'),
-                script_type: ScriptType::Lint,
-            },
-            Script {
-                name: "fix".to_string(),
-                command: "cargo clippy --fix".to_string(),
-                description: Some("Automatically fix linting issues".to_string()),
-                shortcut: None,
-                script_type: ScriptType::Lint,
-            },
+                Some(ScriptType::Lint),
+                Some('c'),
+            ),
+            Script::new(
+                "lint",
+                "cargo clippy",
+                Some("Run the Rust linter (clippy)".to_string()),
+                Some(ScriptType::Lint),
+                Some('l'),
+            ),
+            Script::new(
+                "fix",
+                "cargo clippy --fix",
+                Some("Automatically fix linting issues".to_string()),
+                Some(ScriptType::Lint),
+                None,
+            ),
         ]);
 
         // Parse custom scripts from [package.metadata.scripts]
@@ -219,13 +211,7 @@ impl PackageManager for RustPackageManager {
                     if let Some(script_table) = custom_scripts.as_table() {
                         for (name, value) in script_table {
                             if let Some(command) = value.as_str() {
-                                scripts.push(Script {
-                                    name: name.clone(),
-                                    command: command.to_string(),
-                                    description: None, // You could add descriptions in Cargo.toml if desired
-                                    shortcut: None,
-                                    script_type: ScriptType::Other,
-                                });
+                                scripts.push(Script::new(&name, &command, None, None, None));
                             }
                         }
                     }
@@ -238,13 +224,13 @@ impl PackageManager for RustPackageManager {
             if let Some(binaries) = bin.as_array() {
                 for binary in binaries {
                     if let Some(name) = binary.get("name").and_then(|n| n.as_str()) {
-                        scripts.push(Script {
-                            name: format!("run:{}", name),
-                            command: format!("cargo run --bin {}", name),
-                            description: Some(format!("Run the {} binary", name)),
-                            shortcut: None,
-                            script_type: ScriptType::Development,
-                        });
+                        scripts.push(Script::new(
+                            &format!("run:{}", name),
+                            &format!("cargo run --bin {}", name),
+                            Some(format!("Run the {} binary", name)),
+                            None,
+                            None,
+                        ));
                     }
                 }
             }
@@ -343,40 +329,40 @@ impl PythonPackageManager {
         let has_pylint = content.lines().any(|l| l.starts_with("pylint"));
 
         if has_ruff {
-            scripts.push(Script {
-                name: "lint".to_string(),
-                command: "ruff check .".to_string(),
-                description: Some("Run Ruff linter".to_string()),
-                shortcut: Some('l'),
-                script_type: ScriptType::Lint,
-            });
+            scripts.push(Script::new(
+                "lint",
+                "ruff check .",
+                Some("Run Ruff linter".to_string()),
+                Some(ScriptType::Lint),
+                Some('l'),
+            ));
         } else if has_flake8 {
-            scripts.push(Script {
-                name: "lint".to_string(),
-                command: "flake8".to_string(),
-                description: Some("Run Flake8 linter".to_string()),
-                shortcut: Some('l'),
-                script_type: ScriptType::Lint,
-            });
+            scripts.push(Script::new(
+                "lint",
+                "flake8",
+                Some("Run Flake8 linter".to_string()),
+                Some(ScriptType::Lint),
+                Some('l'),
+            ));
         } else if has_pylint {
-            scripts.push(Script {
-                name: "lint".to_string(),
-                command: "pylint **/*.py".to_string(),
-                description: Some("Run Pylint linter".to_string()),
-                shortcut: Some('l'),
-                script_type: ScriptType::Lint,
-            });
+            scripts.push(Script::new(
+                "lint",
+                "pylint **/*.py",
+                Some("Run Pylint linter".to_string()),
+                Some(ScriptType::Lint),
+                Some('l'),
+            ));
         }
 
         for line in content.lines() {
             if let Some(package) = line.split_whitespace().next() {
-                scripts.push(Script {
-                    name: package.to_string(),
-                    command: format!("pip install {}", package),
-                    description: None,
-                    shortcut: None,
-                    script_type: ScriptType::Other,
-                });
+                scripts.push(Script::new(
+                    &package.to_string(),
+                    &format!("pip install {}", package),
+                    None,
+                    None,
+                    None,
+                ));
             }
         }
 
@@ -393,35 +379,38 @@ impl PythonPackageManager {
         // Add common Python linting commands if the tools are in dependencies
         if let Some(tool) = pyproject.get("tool") {
             if let Some(poetry) = tool.get("poetry") {
-                if let Some(deps) = poetry.get("dependencies").or_else(|| poetry.get("dev-dependencies")) {
+                if let Some(deps) = poetry
+                    .get("dependencies")
+                    .or_else(|| poetry.get("dev-dependencies"))
+                {
                     let has_ruff = deps.as_table().map_or(false, |t| t.contains_key("ruff"));
                     let has_flake8 = deps.as_table().map_or(false, |t| t.contains_key("flake8"));
                     let has_pylint = deps.as_table().map_or(false, |t| t.contains_key("pylint"));
 
                     if has_ruff {
-                        scripts.push(Script {
-                            name: "lint".to_string(),
-                            command: "poetry run ruff check .".to_string(),
-                            description: Some("Run Ruff linter".to_string()),
-                            shortcut: Some('l'),
-                            script_type: ScriptType::Lint,
-                        });
+                        scripts.push(Script::new(
+                            "lint",
+                            "poetry run ruff check .",
+                            Some("Run Ruff linter".to_string()),
+                            Some(ScriptType::Lint),
+                            Some('l'),
+                        ));
                     } else if has_flake8 {
-                        scripts.push(Script {
-                            name: "lint".to_string(),
-                            command: "poetry run flake8".to_string(),
-                            description: Some("Run Flake8 linter".to_string()),
-                            shortcut: Some('l'),
-                            script_type: ScriptType::Lint,
-                        });
+                        scripts.push(Script::new(
+                            "lint",
+                            "poetry run flake8",
+                            Some("Run Flake8 linter".to_string()),
+                            Some(ScriptType::Lint),
+                            Some('l'),
+                        ));
                     } else if has_pylint {
-                        scripts.push(Script {
-                            name: "lint".to_string(),
-                            command: "poetry run pylint **/*.py".to_string(),
-                            description: Some("Run Pylint linter".to_string()),
-                            shortcut: Some('l'),
-                            script_type: ScriptType::Lint,
-                        });
+                        scripts.push(Script::new(
+                            "lint",
+                            "poetry run pylint **/*.py",
+                            Some("Run Pylint linter".to_string()),
+                            Some(ScriptType::Lint),
+                            Some('l'),
+                        ));
                     }
                 }
             }
@@ -436,13 +425,7 @@ impl PythonPackageManager {
                         } else {
                             format!("poetry add {}@{}", name, value.as_str().unwrap_or("latest"))
                         };
-                        scripts.push(Script {
-                            name: name.to_string(),
-                            command,
-                            description: None,
-                            shortcut: None,
-                            script_type: ScriptType::Other,
-                        });
+                        scripts.push(Script::new(&name.to_string(), &command, None, None, None));
                     }
                 }
                 if let Some(dev_dependencies) = poetry.get("dev-dependencies") {
@@ -456,13 +439,13 @@ impl PythonPackageManager {
                                 value.as_str().unwrap_or("latest")
                             )
                         };
-                        scripts.push(Script {
-                            name: format!("dev:{}", name),
-                            command,
-                            description: None,
-                            shortcut: None,
-                            script_type: ScriptType::Development,
-                        });
+                        scripts.push(Script::new(
+                            &format!("dev:{}", name),
+                            &command,
+                            None,
+                            None,
+                            None,
+                        ));
                     }
                 }
             }
@@ -488,29 +471,29 @@ impl PythonPackageManager {
             let has_pylint = deps.contains_key("pylint");
 
             if has_ruff {
-                scripts.push(Script {
-                    name: "lint".to_string(),
-                    command: "uv run ruff check .".to_string(),
-                    description: Some("Run Ruff linter".to_string()),
-                    shortcut: Some('l'),
-                    script_type: ScriptType::Lint,
-                });
+                scripts.push(Script::new(
+                    "lint",
+                    "uv run ruff check .",
+                    Some("Run Ruff linter".to_string()),
+                    Some(ScriptType::Lint),
+                    Some('l'),
+                ));
             } else if has_flake8 {
-                scripts.push(Script {
-                    name: "lint".to_string(),
-                    command: "uv run flake8".to_string(),
-                    description: Some("Run Flake8 linter".to_string()),
-                    shortcut: Some('l'),
-                    script_type: ScriptType::Lint,
-                });
+                scripts.push(Script::new(
+                    "lint",
+                    "uv run flake8",
+                    Some("Run Flake8 linter".to_string()),
+                    Some(ScriptType::Lint),
+                    Some('l'),
+                ));
             } else if has_pylint {
-                scripts.push(Script {
-                    name: "lint".to_string(),
-                    command: "uv run pylint **/*.py".to_string(),
-                    description: Some("Run Pylint linter".to_string()),
-                    shortcut: Some('l'),
-                    script_type: ScriptType::Lint,
-                });
+                scripts.push(Script::new(
+                    "lint",
+                    "uv run pylint **/*.py",
+                    Some("Run Pylint linter".to_string()),
+                    Some(ScriptType::Lint),
+                    Some('l'),
+                ));
             }
         }
 
