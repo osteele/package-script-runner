@@ -268,16 +268,14 @@ fn run_script(script: &Script) -> Result<Option<i32>> {
         .arg("-c")
         .arg(&script.command)
         .status()?;
-    enable_raw_mode()?;
-    // Wait for user input to continue or quit
+
     println!("Press 'q' to quit or any other key to continue...");
+    enable_raw_mode()?;
     if let Event::Key(key) = event::read()? {
         if key.code == KeyCode::Char('q') {
             return Ok(None);
         }
     }
-    std::io::stdout().execute(EnterAlternateScreen)?;
-
     if !status.success() {
         return Ok(status.code());
     }
@@ -374,9 +372,10 @@ fn run_app_loop(
                         items.push(ListItem::new(Line::from(vec![
                             Span::styled(
                                 format!(
-                                    "{}{}",
+                                    "{}{} {}",
                                     icon.map(|s| format!("{} ", s)).unwrap_or_default(),
-                                    shortcut
+                                    shortcut,
+                                    script.name
                                 ),
                                 Style::default()
                                     .fg(script.script_type.color(app.theme))
