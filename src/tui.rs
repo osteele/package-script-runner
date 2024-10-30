@@ -12,7 +12,6 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap},
     Terminal,
 };
-use scopeguard::defer;
 use std::io::stdout;
 
 use crate::themes::Theme;
@@ -234,53 +233,55 @@ pub fn run_app(project: &Project, settings: &Settings) -> Result<()> {
     }
 
     let mut app = App::new(project, &project_owners_refs, settings.theme, settings)?;
-
-    let mut stdout = stdout();
-    enable_raw_mode()?;
-    stdout.execute(EnterAlternateScreen)?;
-    let backend = CrosstermBackend::new(stdout);
+    let backend = CrosstermBackend::new(stdout());
     let mut terminal = Terminal::new(backend)?;
-    defer! {
-        let  _ = disable_raw_mode();
-        let _ = std::io::stdout().execute(LeaveAlternateScreen);
-    }
+
+    prepare_terminal()?;
     loop {
-        // Get user selection
         let selection = run_app_loop(&mut terminal, &mut app)?;
 
         match selection {
             AppAction::Quit => break,
             AppAction::RunScript(script_name) => {
                 if let Some(script) = app.scripts.iter().find(|s| s.name == script_name) {
-                    // Run the script
-                    let _ = disable_raw_mode();
-                    let _ = std::io::stdout().execute(LeaveAlternateScreen);
-                    let status = std::process::Command::new("sh")
-                        .arg("-c")
-                        .arg(&script.command)
-                        .status()?;
-                    enable_raw_mode()?;
-                    // Wait for user input to continue or quit
-                    println!("Press 'q' to quit or any other key to continue...");
-                    if let Event::Key(key) = event::read()? {
-                        if key.code == KeyCode::Char('q') {
-                            return Ok(());
-                        }
-                    }
-                    std::io::stdout().execute(EnterAlternateScreen)?;
-
-                    if !status.success() {
-                        if let Some(code) = status.code() {
-                            display_error_splash(&mut terminal, code)?;
-                        }
+                    let status_code = run_script(script)?;
+                    terminal.draw(|_| {})?;
+                    if let Some(code) = status_code {
+                        display_error_splash(&mut terminal, code)?;
                     }
                 }
             }
         }
     }
 
-    let _ = restore_terminal(terminal);
+    restore_terminal()?;
     Ok(())
+}
+
+fn run_script(script: &Script) -> Result<Option<i32>> {
+    restore_terminal()?;
+    let _guard = scopeguard::guard((), |_| {
+        let _ = prepare_terminal();
+    });
+
+    let status = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(&script.command)
+        .status()?;
+    enable_raw_mode()?;
+    // Wait for user input to continue or quit
+    println!("Press 'q' to quit or any other key to continue...");
+    if let Event::Key(key) = event::read()? {
+        if key.code == KeyCode::Char('q') {
+            return Ok(None);
+        }
+    }
+    std::io::stdout().execute(EnterAlternateScreen)?;
+
+    if !status.success() {
+        return Ok(status.code());
+    }
+    Ok(None)
 }
 
 fn run_app_loop(
@@ -527,10 +528,15 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
         .split(popup_layout[1])[1]
 }
 
-#[allow(dead_code)]
-fn restore_terminal(mut terminal: Terminal<CrosstermBackend<std::io::Stdout>>) -> Result<()> {
+fn restore_terminal() -> Result<()> {
     disable_raw_mode()?;
-    terminal.show_cursor()?;
-    terminal.backend_mut().execute(LeaveAlternateScreen)?;
+    stdout().execute(LeaveAlternateScreen)?;
+    Ok(())
+}
+
+// Helper function to prepare terminal for TUI
+fn prepare_terminal() -> Result<()> {
+    enable_raw_mode()?;
+    stdout().execute(EnterAlternateScreen)?;
     Ok(())
 }
