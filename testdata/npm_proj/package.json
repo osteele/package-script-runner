@@ -1,0 +1,23 @@
+{
+  "name": "npm-test-project",
+  "version": "1.0.0",
+  "description": "Test project for script runner",
+  "scripts": {
+    "start": "echo 'Starting application...'",
+    "build": "echo 'Building project...'",
+    "test": "echo 'Running tests...'",
+    "lint": "echo 'Linting code...'",
+    "fail": "exit 1",
+    "fail-with-output": "echo 'Failed with output' && exit 1",
+    "dev": "echo 'Starting development server...'"
+  },
+  "descriptions": {
+    "start": "Start the application",
+    "build": "Build the project",
+    "test": "Run the test suite",
+    "lint": "Run the linter",
+    "fail": "A script that always fails",
+    "fail-with-message": "A script that prints a message and fails",
+    "dev": "Start development server"
+  }
+}
