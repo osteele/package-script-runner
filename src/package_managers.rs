@@ -168,7 +168,7 @@ impl PackageManager for RustPackageManager {
                 "run",
                 "cargo run",
                 Some("Run the main binary of the current package".to_string()),
-                Some(ScriptType::Run),
+                Some(ScriptType::DevRun),
                 Some('r'),
             ),
             Script::new(
@@ -199,7 +199,21 @@ impl PackageManager for RustPackageManager {
                 "fix",
                 "cargo clippy --fix",
                 Some("Automatically fix linting issues".to_string()),
-                Some(ScriptType::Lint),
+                Some(ScriptType::Fix),
+                None,
+            ),
+            Script::new(
+                "install",
+                "cargo install --path .",
+                Some("Install the current package".to_string()),
+                Some(ScriptType::Deploy),
+                None,
+            ),
+            Script::new(
+                "publish",
+                "cargo publish",
+                Some("Publish the current package".to_string()),
+                Some(ScriptType::Publish),
                 None,
             ),
         ]);
@@ -211,7 +225,13 @@ impl PackageManager for RustPackageManager {
                     if let Some(script_table) = custom_scripts.as_table() {
                         for (name, value) in script_table {
                             if let Some(command) = value.as_str() {
-                                scripts.push(Script::new(&name, &command, None, None, None));
+                                scripts.push(Script::new(
+                                    &name,
+                                    &command,
+                                    None,
+                                    Some(ScriptType::Run),
+                                    None,
+                                ));
                             }
                         }
                     }

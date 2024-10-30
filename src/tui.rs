@@ -18,7 +18,7 @@ use std::io::stdout;
 use crate::{
     config::{Settings, Theme},
     project::create_project,
-    script_type::group_scripts,
+    script_type::{group_scripts, ScriptType},
 };
 use crate::{
     project::Project,
@@ -31,23 +31,41 @@ impl ScriptCategory {
             Theme::NoColor => Color::Reset,
             Theme::Dark => match self {
                 ScriptCategory::Build => Color::Rgb(255, 204, 0),
+                ScriptCategory::Run => Color::Rgb(0, 255, 0),
                 ScriptCategory::Development => Color::Rgb(0, 255, 0),
-                ScriptCategory::Test => Color::Rgb(0, 255, 255),
                 ScriptCategory::Deployment => Color::Rgb(0, 191, 255),
-                ScriptCategory::Format => Color::Rgb(191, 0, 255),
-                ScriptCategory::Lint => Color::Rgb(255, 128, 0),
-                ScriptCategory::Clean => Color::Rgb(192, 192, 192),
                 ScriptCategory::Other => Color::White,
             },
             Theme::Light => match self {
                 ScriptCategory::Build => Color::Rgb(204, 102, 0),
+                ScriptCategory::Run => Color::Rgb(0, 128, 0),
                 ScriptCategory::Development => Color::Rgb(0, 153, 0),
-                ScriptCategory::Test => Color::Rgb(0, 102, 204),
                 ScriptCategory::Deployment => Color::Rgb(153, 0, 0),
-                ScriptCategory::Format => Color::Rgb(102, 0, 204),
-                ScriptCategory::Lint => Color::Rgb(204, 51, 0),
-                ScriptCategory::Clean => Color::Rgb(64, 64, 64),
                 ScriptCategory::Other => Color::Black,
+            },
+        }
+    }
+}
+
+impl ScriptType {
+    fn color(&self, theme: Theme) -> Color {
+        match theme {
+            Theme::NoColor => Color::Reset,
+            Theme::Dark => match self {
+                ScriptType::Build => Color::Rgb(255, 204, 0),
+                ScriptType::Format => Color::Rgb(191, 0, 255),
+                ScriptType::Lint => Color::Rgb(255, 128, 0),
+                ScriptType::Clean => Color::Rgb(192, 192, 192),
+                ScriptType::Test => Color::Rgb(0, 255, 255),
+                _ => self.category().color(theme),
+            },
+            Theme::Light => match self {
+                ScriptType::Build => Color::Rgb(204, 102, 0),
+                ScriptType::Format => Color::Rgb(102, 0, 204),
+                ScriptType::Lint => Color::Rgb(204, 51, 0),
+                ScriptType::Test => Color::Rgb(0, 102, 204),
+                ScriptType::Clean => Color::Rgb(64, 64, 64),
+                _ => self.category().color(theme),
             },
         }
     }
@@ -197,7 +215,7 @@ fn render_script_preview(script: &Script, theme: Theme, show_emoji: bool) -> Vec
             Span::styled("Type: ", Style::default().add_modifier(Modifier::BOLD)),
             Span::styled(
                 format!("{:?}", script.category),
-                Style::default().fg(script.category.color(theme)),
+                Style::default().fg(script.script_type.color(theme)),
             ),
         ]),
         Line::from(vec![

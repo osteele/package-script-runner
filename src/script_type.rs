@@ -44,43 +44,16 @@ impl Script {
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum ScriptCategory {
-    Build,
-    Clean,
-    Deployment,
     Development,
-    Format,
-    Lint,
-    Test,
+    Deployment,
+    Build,
+    Run,
     Other,
 }
 
 impl ScriptCategory {
     pub fn from_script(name: &str, command: &str) -> Self {
-        let text = format!("{} {}", name, command).to_lowercase();
-        if text.contains("build") || text.contains("webpack") || text.contains("compile") {
-            Self::Build
-        } else if text.contains("dev") || text.contains("start") || text.contains("watch") {
-            Self::Development
-        } else if text.contains("test") || text.contains("jest") || text.contains("vitest") {
-            Self::Test
-        } else if text.contains("deploy") || text.contains("publish") {
-            Self::Deployment
-        } else if text.contains("format") || text.contains("prettier") {
-            Self::Format
-        } else if text.contains("lint")
-            || text.contains("eslint")
-            || text.contains("stylelint")
-            || text.contains("clippy")
-            || text.contains("flake8")
-            || text.contains("pylint")
-            || text.contains("ruff")
-        {
-            Self::Lint
-        } else if text.contains("clean") || text.contains("clear") {
-            Self::Clean
-        } else {
-            Self::Other
-        }
+        ScriptType::from_script(name, command).category()
     }
 
     #[allow(dead_code)]
@@ -100,13 +73,10 @@ impl ScriptCategory {
 
     pub fn icon(&self) -> Option<&'static str> {
         match self {
-            ScriptCategory::Build => Some("🔨"),
-            ScriptCategory::Clean => Some("🧹"),
+            ScriptCategory::Development => Some("🔨"),
             ScriptCategory::Deployment => Some("📦"),
-            ScriptCategory::Development => Some("🚀"),
-            ScriptCategory::Format => Some("✨"),
-            ScriptCategory::Lint => Some("🔍"),
-            ScriptCategory::Test => Some("🧪"),
+            ScriptCategory::Build => Some("🔨"),
+            ScriptCategory::Run => Some("▶️"),
             ScriptCategory::Other => None,
         }
     }
@@ -117,7 +87,9 @@ pub enum ScriptType {
     Build,
     Check,
     Clean,
+    DevRun,
     Deploy,
+    Fix,
     Format,
     Lint,
     Publish,
@@ -166,14 +138,16 @@ impl ScriptType {
     pub fn category(&self) -> ScriptCategory {
         match self {
             Self::Build => ScriptCategory::Build,
-            Self::Check => ScriptCategory::Lint,
-            Self::Clean => ScriptCategory::Clean,
+            Self::Check => ScriptCategory::Development,
+            Self::Clean => ScriptCategory::Build,
             Self::Deploy => ScriptCategory::Deployment,
-            Self::Format => ScriptCategory::Format,
-            Self::Lint => ScriptCategory::Lint,
+            Self::Fix => ScriptCategory::Development,
+            Self::Format => ScriptCategory::Development,
+            Self::Lint => ScriptCategory::Development,
             Self::Publish => ScriptCategory::Deployment,
-            Self::Run => ScriptCategory::Development,
-            Self::Test => ScriptCategory::Test,
+            Self::Run => ScriptCategory::Run,
+            Self::DevRun => ScriptCategory::Development,
+            Self::Test => ScriptCategory::Development,
             Self::Other => ScriptCategory::Other,
         }
     }
@@ -184,10 +158,12 @@ impl ScriptType {
             ScriptType::Check => Some("✅"),
             ScriptType::Clean => Some("🧹"),
             ScriptType::Deploy => Some("🚀"),
-            ScriptType::Format => Some("✨"),
+            ScriptType::Fix => Some("✨"),
+            ScriptType::Format => Some("🔧"),
             ScriptType::Lint => Some("🔍"),
             ScriptType::Publish => Some("📦"),
             ScriptType::Run => Some("▶️"),
+            ScriptType::DevRun => Some("▶️"),
             ScriptType::Test => Some("🧪"),
             ScriptType::Other => self.category().icon(),
         }
@@ -237,24 +213,29 @@ pub fn find_synonym_script(scripts: &[Script], name: &str) -> Option<String> {
 }
 
 pub fn group_scripts<'a>(scripts: &'a [Script]) -> Vec<Vec<&'a Script>> {
-    let mut prioritized = Vec::new();
+    let mut prioritized_with_shortcuts = Vec::new();
+    let mut prioritized_without_shortcuts = Vec::new();
     let mut with_shortcuts = Vec::new();
     let mut others = Vec::new();
 
     for script in scripts.iter() {
-        if script.category != ScriptCategory::Other {
-            prioritized.push(script);
-        } else if script.shortcut.is_some() {
-            with_shortcuts.push(script);
-        } else {
-            others.push(script);
+        match (script.category != ScriptCategory::Other, script.shortcut) {
+            (true, Some(_)) => prioritized_with_shortcuts.push(script),
+            (true, None) => prioritized_without_shortcuts.push(script),
+            (false, Some(_)) => with_shortcuts.push(script),
+            _ => others.push(script),
         }
     }
 
-    vec![prioritized, with_shortcuts, others]
-        .into_iter()
-        .filter(|group| !group.is_empty())
-        .collect()
+    vec![
+        prioritized_with_shortcuts,
+        prioritized_without_shortcuts,
+        with_shortcuts,
+        others,
+    ]
+    .into_iter()
+    .filter(|group| !group.is_empty())
+    .collect()
 }
 
 #[cfg(test)]
