@@ -378,7 +378,7 @@ fn run_app_loop(
                                     shortcut
                                 ),
                                 Style::default()
-                                    .fg(script.category.color(app.theme))
+                                    .fg(script.script_type.color(app.theme))
                                     .add_modifier(Modifier::BOLD),
                             ),
                             Span::raw(": "),

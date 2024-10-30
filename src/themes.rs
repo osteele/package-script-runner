@@ -38,10 +38,10 @@ impl ScriptCategory {
                 ScriptCategory::Other => Color::White,
             },
             Theme::Light => match self {
-                ScriptCategory::Build => Color::Rgb(204, 102, 0),
-                ScriptCategory::Run => Color::Rgb(0, 128, 0),
-                ScriptCategory::Development => Color::Rgb(0, 153, 0),
-                ScriptCategory::Deployment => Color::Rgb(153, 0, 0),
+                ScriptCategory::Build => Color::Rgb(204, 102, 0), // Dark orange
+                ScriptCategory::Run => Color::Rgb(0, 128, 0),     // Dark green
+                ScriptCategory::Development => Color::Rgb(0, 153, 0), // Medium green
+                ScriptCategory::Deployment => Color::Rgb(0, 102, 204), // Dark blue
                 ScriptCategory::Other => Color::Black,
             },
         }
@@ -61,11 +61,11 @@ impl ScriptType {
                 _ => self.category().color(theme),
             },
             Theme::Light => match self {
-                ScriptType::Build => Color::Rgb(204, 102, 0),
-                ScriptType::Format => Color::Rgb(102, 0, 204),
-                ScriptType::Lint => Color::Rgb(204, 51, 0),
-                ScriptType::Test => Color::Rgb(0, 102, 204),
-                ScriptType::Clean => Color::Rgb(64, 64, 64),
+                ScriptType::Build => Color::Rgb(204, 102, 0), // Dark orange
+                ScriptType::Format => Color::Rgb(102, 0, 204), // Dark purple
+                ScriptType::Lint => Color::Rgb(204, 51, 0),   // Dark red-orange
+                ScriptType::Test => Color::Rgb(0, 102, 204),  // Dark blue
+                ScriptType::Clean => Color::Rgb(64, 64, 64),  // Dark gray
                 _ => self.category().color(theme),
             },
         }
