@@ -3,7 +3,7 @@
 <img src="docs/logo.svg" width="100" alt="Package Script Runner Logo">
 
 A fast TUI-based script selector for Node.js (npm, bun, deno), Python (pip,
-poetry, uv), and Rust projects. Quickly find and run package scripts with
+poetry, uv), Rust, and Go projects. Quickly find and run package scripts with
 keyboard shortcuts, search, and smart project type detection.
 
 I wrote this because I had difficulty remembering which projects used which
@@ -17,8 +17,9 @@ full-stack development.
 ## Features
 
 - 📁 **Project Type Detection**:
-  - Automatically detects the language and package manager, e.g.
-    `npm`, `yarn`, `pnpm`, `bun`, `deno` (NodeJS), `pip`, `poetry`, `uv` (Python), `cargo` (Rust)
+  - Automatically detects the language and package manager, e.g. `npm`, `yarn`,
+    `pnpm`, `bun`, `deno` (NodeJS), `pip`, `poetry`, `uv` (Python), `cargo`
+    (Rust)
 - 📂 **Project Management**: Save and quickly access frequently used project
   directories
 - 🚀 **CLI and TUI Interfaces**: List the supported scripts and run them quickly
