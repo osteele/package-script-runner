@@ -4,8 +4,7 @@ use std::collections::HashMap;
 use crate::cli::{Cli, Commands, ProjectsAction};
 use crate::config::Settings;
 use crate::execution::{run_script, run_script_with_env};
-use crate::project::{detect_project, Project};
-use crate::script_type::{find_synonym_script, Script, SPECIAL_SCRIPTS};
+use crate::types::{find_synonym_script, Project, Script, SPECIAL_SCRIPTS};
 use crate::themes::Theme;
 use crate::tui;
 use crossterm::{
@@ -74,7 +73,7 @@ impl Cli {
 
         // Detect package manager
         let current_dir = std::env::current_dir()?;
-        let project = detect_project(&current_dir)
+        let project = Project::detect(&current_dir)
             .ok_or_else(|| anyhow::anyhow!("Could not detect package manager"))?;
 
         // Find scripts

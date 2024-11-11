@@ -2,8 +2,7 @@ mod cli;
 mod config;
 mod execution;
 mod package_managers;
-mod project;
-mod script_type;
+mod types;
 mod themes;
 mod tui;
 

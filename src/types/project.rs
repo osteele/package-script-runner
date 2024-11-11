@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use crate::package_managers::detect_package_manager_in_dir;
 use crate::package_managers::PackageManager;
-use crate::script_type::Script;
+use crate::types::Script;
 use anyhow::Result;
 
 pub struct Project {
@@ -16,6 +16,14 @@ pub struct Project {
 impl Project {
     pub fn scripts(&self) -> Result<Vec<Script>> {
         self.package_manager.parse_scripts(&self.path)
+    }
+
+    pub fn detect(path: &Path) -> Option<Project> {
+        detect_project(path)
+    }
+
+    pub fn create(name: &str, path: &Path) -> Option<Project> {
+        create_project(name, path)
     }
 }
 

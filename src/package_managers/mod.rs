@@ -6,7 +6,7 @@ mod rust;
 use anyhow::Result;
 use std::{path::Path, process::Command};
 
-use crate::script_type::Script;
+use crate::types::Script;
 
 use go::GoPackageManager;
 use node::NodePackageManager;

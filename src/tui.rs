@@ -15,8 +15,8 @@ use ratatui::{
 use std::io::stdout;
 
 use crate::themes::Theme;
-use crate::{config::Settings, project::create_project, script_type::group_scripts};
-use crate::{project::Project, script_type::Script};
+use crate::{config::Settings, types::group_scripts};
+use crate::types::{Project, Script};
 
 struct App<'a> {
     project: &'a Project,
@@ -220,7 +220,7 @@ pub fn run_app(project: &Project, settings: &Settings) -> Result<()> {
     let project_owners = &settings
         .projects
         .iter()
-        .filter_map(|(name, path)| create_project(name, path))
+        .filter_map(|(name, path)| Project::create(name, path))
         .collect::<Vec<Project>>();
     let mut project_owners_refs = project_owners.iter().map(|p| p).collect::<Vec<&Project>>();
 

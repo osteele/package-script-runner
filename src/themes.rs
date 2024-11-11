@@ -3,7 +3,7 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::str::FromStr;
 
-use crate::script_type::{ScriptCategory, ScriptType};
+use crate::types::{ScriptCategory, ScriptType};
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]

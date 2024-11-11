@@ -4,7 +4,7 @@ use serde::Deserialize;
 use std::{collections::HashMap, fs, path::Path, process::Command};
 
 use super::PackageManager;
-use crate::script_type::{Script, ScriptCategory};
+use crate::types::{Script, ScriptCategory};
 
 pub enum NodePackageManager {
     Npm,

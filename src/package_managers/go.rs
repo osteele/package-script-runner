@@ -3,7 +3,7 @@ use anyhow::Result;
 use std::{fs, path::Path, process::Command};
 
 use super::PackageManager;
-use crate::script_type::{Script, ScriptType};
+use crate::types::{Script, ScriptType};
 
 pub struct GoPackageManager;
 
