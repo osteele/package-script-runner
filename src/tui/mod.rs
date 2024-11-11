@@ -1,8 +1,12 @@
 mod actions;
 mod app;
+mod run;
 mod script_execution;
-mod tui;
-mod widgets;
+mod ui;
 mod utils;
+mod widgets;
 
-pub use tui::run_tui;
+use app::App;
+use ui::run_event_loop;
+
+pub use run::run_tui;

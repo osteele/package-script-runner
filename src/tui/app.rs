@@ -1,8 +1,11 @@
-use crate::themes::Theme;
-use crate::{config::Settings, types::group_scripts};
-use crate::types::{Project, Script};
 use anyhow::Context;
 use ratatui::widgets::ListState;
+
+
+use crate::config::Settings;
+use crate::themes::Theme;
+use crate::types::group_scripts;
+use crate::types::{Project, Script};
 
 pub struct App<'a> {
     pub project: &'a Project,
