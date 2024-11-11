@@ -1,5 +1,46 @@
 PSR (Package Script Runner) - Developer Notes
-===========================================
+=============================================
+
+Tech Stack Overview
+------------------
+PSR is built using the following technologies:
+
+- Rust programming language
+- Ratatui library for terminal UI
+- Crossterm library for terminal manipulation
+- Clap library for command-line argument parsing
+- Serde for JSON serialization/deserialization
+- Anyhow for error handling
+- Dirs for cross-platform directory handling
+- Walkdir for directory traversal
+- Which for executable path resolution
+- Toml for configuration file parsing
+- Scopeguard for RAII-style resource management
+
+Dev Setup Instructions
+---------------------
+To set up the development environment for PSR:
+
+1. Install Rust by following the instructions at https://www.rust-lang.org/tools/install
+2. Clone the PSR repository:
+   ```
+   git clone https://github.com/osteele/package-script-runner.git
+   cd package-script-runner
+   ```
+3. Install `just` command runner:
+   ```
+   cargo install just
+   ```
+4. Install development dependencies:
+   ```
+   cargo install cargo-husky
+   ```
+5. Run tests to verify setup:
+   ```
+   just test
+   ```
+
+You're now ready to start developing PSR!
 
 Core Functionality
 ----------------
@@ -75,6 +116,10 @@ Development Guidelines
 3. Maintain clear separation between project management and script execution
 4. Ensure proper cleanup of temporary resources
 5. Follow semantic versioning for releases
+6. Use `just` for running development tasks
+7. Use `cargo fmt` for consistent code formatting
+8. Run `cargo clippy` to catch common issues and improve code quality
+9. Ensure `cargo test` passes before committing changes
 
 Future Considerations
 ------------------

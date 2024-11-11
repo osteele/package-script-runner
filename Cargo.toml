@@ -38,8 +38,4 @@ config = "0.13"
 scopeguard = "1.2.0"
 
 [package.metadata.cargo-husky]
-hooks.pre-commit = """
-cargo fmt --all -- --check
-cargo clippy -- -D warnings
-cargo test
-"""
+hooks.pre-commit = "just fix"
