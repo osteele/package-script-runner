@@ -1,5 +1,4 @@
 mod cli;
-mod commands;
 mod config;
 mod execution;
 mod package_managers;
