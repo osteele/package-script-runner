@@ -184,6 +184,17 @@ pub const SPECIAL_SCRIPTS: &[&str] = &[
     "typecheck",
 ];
 
+/**
+ * Finds a synonym script from a list of scripts based on the given name.
+ *
+ * This function first checks if the exact script name exists. If not, it looks
+ * for synonymous commands (e.g., "dev" is synonymous with "start" and "run").
+ *
+ * @param scripts - A slice of Script objects to search through
+ * @param name - The name of the script to find a synonym for
+ * @returns The name of the found script (either exact match or synonym), or
+ * None if not found
+ */
 pub fn find_synonym_script(scripts: &[Script], name: &str) -> Option<String> {
     // First check if the script exists directly
     if scripts.iter().any(|s| s.name == name) {

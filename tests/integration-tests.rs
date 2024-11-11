@@ -183,7 +183,7 @@ fn test_cli_options() -> Result<()> {
     cmd.arg("--help")
         .assert()
         .success()
-        .stdout(predicate::str::contains("A fast TUI-based script runner"))
+        .stdout(predicate::str::contains("A fast CLI and TUI-based script runner"))
         .stdout(predicate::str::contains("\nUsage: psr"))
         .stdout(predicate::str::contains("\nOptions:"))
         .stdout(predicate::str::contains("\nCommands:"))

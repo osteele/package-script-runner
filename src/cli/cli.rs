@@ -7,7 +7,7 @@ use std::path::PathBuf;
 #[command(name = "psr")]
 #[command(author = "Oliver Steele <steele@osteele.com>")]
 #[command(version)]
-#[command(about = "A fast TUI-based script runner for Node.js and Deno projects", long_about = None)]
+#[command(about = env!("CARGO_PKG_DESCRIPTION"), long_about = None)]
 pub struct Cli {
     /// Start in a specific directory instead of current directory
     #[arg(short, long)]
