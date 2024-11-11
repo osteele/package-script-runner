@@ -17,8 +17,8 @@ pub trait PackageManager {
     fn detect(dir: &Path) -> Option<Self>
     where
         Self: Sized;
+    fn find_scripts(&self, path: &Path) -> Result<Vec<Script>>;
     fn run_command(&self, script: &str) -> Command;
-    fn parse_scripts(&self, path: &Path) -> Result<Vec<Script>>;
 }
 
 pub fn detect_package_manager_in_dir(dir: &Path) -> Option<Box<dyn PackageManager>> {

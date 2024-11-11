@@ -11,7 +11,7 @@ pub fn render_script_preview(script: &Script, theme: Theme, show_emoji: bool) ->
             Span::raw(format!(
                 "{} {}",
                 if show_emoji {
-                    script.category.icon().unwrap_or("")
+                    script.icon().unwrap_or("")
                 } else {
                     ""
                 },
@@ -21,7 +21,7 @@ pub fn render_script_preview(script: &Script, theme: Theme, show_emoji: bool) ->
         Line::from(vec![
             Span::styled("Type: ", Style::default().add_modifier(Modifier::BOLD)),
             Span::styled(
-                format!("{:?}", script.category),
+                format!("{:?}", script.phase),
                 Style::default().fg(script.script_type.color(theme)),
             ),
         ]),

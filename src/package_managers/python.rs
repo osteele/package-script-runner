@@ -74,7 +74,7 @@ impl PackageManager for PythonPackageManager {
         }
     }
 
-    fn parse_scripts(&self, path: &Path) -> Result<Vec<Script>> {
+    fn find_scripts(&self, path: &Path) -> Result<Vec<Script>> {
         match self {
             Self::Pip => self.parse_pip_scripts(path),
             Self::Poetry => self.parse_poetry_scripts(path),
@@ -264,5 +264,31 @@ impl PythonPackageManager {
         }
 
         Ok(scripts)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tests::project_dir_mocks::*;
+
+    #[test]
+    fn test_parse_pip_scripts() {
+        let uv = PythonPackageManager::Uv;
+        let temp_dir = create_pip_project(&std::env::temp_dir().join("pip-project")).unwrap();
+        let scripts = uv.parse_pip_scripts(&temp_dir.dir).unwrap();
+        println!("{:?}", scripts);
+
+        assert!(scripts.iter().any(|s| s.name == "lint" && s.script_type == ScriptType::Lint));
+    }
+
+    #[test]
+    #[ignore]
+    fn test_parse_poetry_scripts() {
+        let poetry = PythonPackageManager::Poetry;
+        let temp_dir = create_poetry_project(&std::env::temp_dir().join("poetry-project")).unwrap();
+        let scripts = poetry.parse_poetry_scripts(&temp_dir.dir).unwrap();
+
+        assert!(scripts.iter().any(|s| s.name == "lint" && s.script_type == ScriptType::Lint));
     }
 }

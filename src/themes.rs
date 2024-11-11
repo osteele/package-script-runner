@@ -3,7 +3,7 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::str::FromStr;
 
-use crate::types::{ScriptCategory, ScriptType};
+use crate::types::{Phase, ScriptType};
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -26,23 +26,27 @@ impl FromStr for Theme {
     }
 }
 
-impl ScriptCategory {
+impl Phase {
     pub fn color(&self, theme: Theme) -> Color {
         match theme {
             Theme::NoColor => Color::Reset,
             Theme::Dark => match self {
-                ScriptCategory::Build => Color::Rgb(255, 204, 0),
-                ScriptCategory::Run => Color::Rgb(0, 255, 0),
-                ScriptCategory::Development => Color::Rgb(0, 255, 0),
-                ScriptCategory::Deployment => Color::Rgb(0, 191, 255),
-                ScriptCategory::Other => Color::White,
+                Phase::Development => Color::Rgb(0, 255, 0),      // Bright green
+                Phase::Quality => Color::Rgb(255, 215, 0),        // Gold
+                Phase::Build => Color::Rgb(255, 165, 0),          // Orange
+                Phase::Dependencies => Color::Rgb(147, 112, 219),  // Medium purple
+                Phase::Release => Color::Rgb(0, 191, 255),        // Deep sky blue
+                Phase::Infrastructure => Color::Rgb(255, 99, 71),  // Tomato
+                Phase::Unknown => Color::White,
             },
             Theme::Light => match self {
-                ScriptCategory::Build => Color::Rgb(204, 102, 0), // Dark orange
-                ScriptCategory::Run => Color::Rgb(0, 128, 0),     // Dark green
-                ScriptCategory::Development => Color::Rgb(0, 153, 0), // Medium green
-                ScriptCategory::Deployment => Color::Rgb(0, 102, 204), // Dark blue
-                ScriptCategory::Other => Color::Black,
+                Phase::Development => Color::Rgb(0, 128, 0),      // Dark green
+                Phase::Quality => Color::Rgb(184, 134, 11),       // Dark goldenrod
+                Phase::Build => Color::Rgb(205, 102, 0),          // Dark orange
+                Phase::Dependencies => Color::Rgb(75, 0, 130),    // Indigo
+                Phase::Release => Color::Rgb(0, 102, 204),        // Dark blue
+                Phase::Infrastructure => Color::Rgb(178, 34, 34), // Firebrick
+                Phase::Unknown => Color::Black,
             },
         }
     }
@@ -53,21 +57,38 @@ impl ScriptType {
         match theme {
             Theme::NoColor => Color::Reset,
             Theme::Dark => match self {
-                ScriptType::Build => Color::Rgb(255, 204, 0),
-                ScriptType::Format => Color::Rgb(191, 0, 255),
-                ScriptType::Lint => Color::Rgb(255, 128, 0),
-                ScriptType::Clean => Color::Rgb(192, 192, 192),
-                ScriptType::Test => Color::Rgb(0, 255, 255),
-                _ => self.category().color(theme),
+                // Development
+                Self::Serve => Color::Rgb(0, 255, 0),        // Bright green
+                Self::Generate => Color::Rgb(50, 205, 50),   // Lime green
+                Self::Migration => Color::Rgb(144, 238, 144), // Light green
+
+                // Quality
+                Self::Test => Color::Rgb(255, 215, 0),       // Gold
+                Self::TestE2E => Color::Rgb(218, 165, 32),   // Goldenrod
+                Self::Lint => Color::Rgb(255, 165, 0),       // Orange
+                Self::TypeCheck => Color::Rgb(255, 140, 0),  // Dark orange
+                Self::Format => Color::Rgb(255, 127, 80),    // Coral
+                Self::Audit => Color::Rgb(255, 99, 71),      // Tomato
+
+                // Build
+                Self::Clean => Color::Rgb(169, 169, 169),    // Dark gray
+                Self::Build | Self::BuildDev | Self::BuildProd => Color::Rgb(255, 165, 0), // Orange
+
+                // Dependencies
+                Self::Install | Self::Update | Self::Lock => Color::Rgb(147, 112, 219), // Medium purple
+
+                // Release
+                Self::Version => Color::Rgb(135, 206, 235),  // Sky blue
+                Self::Publish => Color::Rgb(0, 191, 255),    // Deep sky blue
+                Self::Deploy | Self::DeployStaging | Self::DeployProd => Color::Rgb(30, 144, 255), // Dodger blue
+
+                // Infrastructure
+                Self::DockerBuild | Self::DockerPush => Color::Rgb(255, 99, 71), // Tomato
+                Self::Provision => Color::Rgb(233, 150, 122), // Dark salmon
+
+                Self::Other => Color::White,
             },
-            Theme::Light => match self {
-                ScriptType::Build => Color::Rgb(204, 102, 0), // Dark orange
-                ScriptType::Format => Color::Rgb(102, 0, 204), // Dark purple
-                ScriptType::Lint => Color::Rgb(204, 51, 0),   // Dark red-orange
-                ScriptType::Test => Color::Rgb(0, 102, 204),  // Dark blue
-                ScriptType::Clean => Color::Rgb(64, 64, 64),  // Dark gray
-                _ => self.category().color(theme),
-            },
+            Theme::Light => self.phase().color(theme), // Use phase colors for light theme
         }
     }
 }

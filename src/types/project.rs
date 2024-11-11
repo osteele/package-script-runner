@@ -15,7 +15,7 @@ pub struct Project {
 
 impl Project {
     pub fn scripts(&self) -> Result<Vec<Script>> {
-        self.package_manager.parse_scripts(&self.path)
+        self.package_manager.find_scripts(&self.path)
     }
 
     pub fn detect(path: &Path) -> Option<Project> {

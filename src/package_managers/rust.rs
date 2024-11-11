@@ -23,7 +23,7 @@ impl PackageManager for RustPackageManager {
         cmd
     }
 
-    fn parse_scripts(&self, path: &Path) -> Result<Vec<Script>> {
+    fn find_scripts(&self, path: &Path) -> Result<Vec<Script>> {
         let cargo_toml_path = path.join("Cargo.toml");
         let content = fs::read_to_string(cargo_toml_path)?;
         let cargo_toml: Value = toml::from_str(&content)?;
@@ -43,7 +43,7 @@ impl PackageManager for RustPackageManager {
                 "run",
                 "cargo run",
                 Some("Run the main binary of the current package".to_string()),
-                Some(ScriptType::DevRun),
+                Some(ScriptType::Serve),
                 Some('r'),
             ),
             Script::new(
@@ -74,7 +74,7 @@ impl PackageManager for RustPackageManager {
                 "fix",
                 "cargo clippy --fix",
                 Some("Automatically fix linting issues".to_string()),
-                Some(ScriptType::Fix),
+                Some(ScriptType::Format),
                 None,
             ),
             Script::new(
@@ -104,7 +104,7 @@ impl PackageManager for RustPackageManager {
                                     &name,
                                     &command,
                                     None,
-                                    Some(ScriptType::Run),
+                                    Some(ScriptType::Serve),
                                     None,
                                 ));
                             }
@@ -132,5 +132,23 @@ impl PackageManager for RustPackageManager {
         }
 
         Ok(scripts)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::tests::project_dir_mocks::*;
+    use super::*;
+
+    #[test]
+    fn test_find_scripts() {
+        let rust = RustPackageManager;
+        let temp_dir = create_cargo_project(&std::env::temp_dir().join("rust-project")).unwrap();
+        let scripts = rust.find_scripts(&temp_dir.dir).unwrap();
+
+        assert!(scripts.iter().any(|s| s.name == "run" && s.script_type == ScriptType::Serve));
+        assert!(scripts.iter().any(|s| s.name == "test" && s.script_type == ScriptType::Test));
+        assert!(scripts.iter().any(|s| s.name == "lint" && s.script_type == ScriptType::Lint));
+        assert!(scripts.iter().any(|s| s.name == "fix" && s.script_type == ScriptType::Format));
     }
 }

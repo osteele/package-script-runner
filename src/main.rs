@@ -6,6 +6,11 @@ mod types;
 mod themes;
 mod tui;
 
+#[cfg(test)]
+pub mod tests {
+    pub mod project_dir_mocks;
+}
+
 use anyhow::Result;
 use clap::Parser;
 use cli::Cli;
