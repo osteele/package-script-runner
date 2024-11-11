@@ -6,7 +6,7 @@ use crate::config::Settings;
 use crate::execution::{run_script, run_script_with_env};
 use crate::types::{find_synonym_script, Project, Script, SPECIAL_SCRIPTS};
 use crate::themes::Theme;
-use crate::tui;
+use crate::tui::run_tui;
 use crossterm::{
     event::{self, Event, KeyCode},
     terminal::{disable_raw_mode, enable_raw_mode},
@@ -170,7 +170,7 @@ impl Cli {
         loop {
             match mode {
                 Mode::TUI => {
-                    tui::run_app(project, &settings)?;
+                    run_tui(&project, &settings)?;
                     break;
                 }
                 Mode::CLI => {
